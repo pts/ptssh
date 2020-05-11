@@ -3,6 +3,15 @@
 # ptssh: portable SSH client for Unix
 # by pts@fazekas.hu at Mon May 11 18:25:34 CEST 2020
 #
+# This shell script is very compatible on the client: it uses RSA keys only,
+# and it works with OpenSSH >=4.3 (checked with OpenSSH 8.2, OpenSSH 7.4 and
+# OpenSSH_4.3p2 Debian-9etch3, OpenSSL 0.9.8c 05 Sep 2006 on Debian Etch),
+# no matter what the system defaults and user defaults for the SSH client are.
+#
+# This script can't run from a FAT filesystem (or other non-Unix
+# filesystems), because `chmod' below isn't able to remove rwx permissions
+# for group and other there.
+#
 if false; then  # Skip lines interpreted by OpenSSH ssh(1).
 -----BEGIN RSA PRIVATE KEY-----
 MIIJKAIBAAKCAgEArv4JT+/+DY9NYDhBuRmc83GPP3V2M/hbGd49EH7AXn5E4I1m
