@@ -3,103 +3,71 @@
 # ptssh: portable SSH client for Unix
 # by pts@fazekas.hu at Mon May 11 18:25:34 CEST 2020
 #
-# This shell script is very compatible on the client: it uses RSA keys only,
-# and it works with OpenSSH >=4.3 (checked with OpenSSH 8.2, OpenSSH 7.4 and
-# OpenSSH_4.3p2 Debian-9etch3, OpenSSL 0.9.8c 05 Sep 2006 on Debian Etch),
-# no matter what the system defaults and user defaults for the SSH client are.
+# ptssh is a portable SSH client (with support for ssh, scp, sftp and
+# rsync) for Unix with a focus on portability: it has a single config file
+# (and it ignores ~/.ssh/*), and it works equivalently on any Unix system
+# and any OpenSSH version. After configuration, it can be used as a fallback
+# to connect if ssh(1) stops working because of a software upgrade or a
+# configuration change. ptssh is implemented as a Bourne shell script
+# calling OpenSSH ssh(1) with custom options.
 #
-# This script ignores the ssh-agent, and asks for the identity file
-# passphrase each time. This is on purpose. The use case for this script is
-# that the identity file is embedded into the script, and the script works
-# uniformly no matter what its environemnt is.
+# To start using ptssh, you need to create the config file ~/.ptssh first.
+# This config file contains the user identity (private key), and for each
+# server the server hostkey, server connection information (hostname, port,
+# username) and server X11 forwarding config. Currently no help is provided
+# on creating the config file. A sample is provided in the file
+# `config.ptssh.sample'.
 #
-# This script is compatible with various Bourne shells: bash, zsh, dash,
+# TODO(pts): Write tutorial on creating the config file.
+#
+# ptssh is very portable compatible: it uses RSA keys by default, and it
+# works with OpenSSH >=3.8 (checked with OpenSSH 8.2, OpenSSH 7.4, OpenSSH
+# 3.8.1, and OpenSSH_4.3p2 Debian-9etch3, OpenSSL 0.9.8c 05 Sep 2006 on
+# Debian Etch), no matter what the system defaults and user defaults for the
+# SSH client are. It also works with various Bourne shells: bash, zsh, dash,
 # pdfksh, busybox sh (ash), posh.
 #
-# This script is compatible with OpenSSH >=3.8 client (released 2004-02-34),
-# but it's recommended to upgrade to OpenSSH >=3.9 client (released
-# 2004-08-18), because recent OpenSSH server versions don't support any kex
-# algorithm compatible with the OpenSSH 3.8 client, with the client failing
-# with error `no kex alg'. This script is also compatible with newer OpenSSH
-# clients, e.g. 8.2 (released 2020-02-14).
+# ptssh is compatible with OpenSSH >=3.8 client (released 2004-02-34), but
+# it's recommended to upgrade to OpenSSH >=3.9 client (released 2004-08-18),
+# because recent OpenSSH server versions don't support any kex (key
+# exchange) algorithm compatible with the OpenSSH 3.8 client, with the
+# client failing with error `no kex alg'. This script is also compatible
+# with newer OpenSSH clients, e.g. 8.2 (released 2020-02-14).
 #
-# This script is compatible with Debian Sarge (2005-06-06) or later, but
+# ptssh ignores the ssh-agent, and asks for the identity file passphrase
+# each time. This is on purpose. One use case for ptssh is that the identity
+# file is embedded into the script, and the script works uniformly no matter
+# what its environment is.
+#
+# ptssh is also compatible with Debian Sarge (2005-06-06) or later, but
 # recent OpenSSH server versions don't support any kex algorithm compatible
 # with the OpenSSH 3.8.1 client in Debian Sarge, so it's recommended to
 # upgrade to Debian Etch (2007-04-08) instead, which has OpenSSH 4.3.
 #
-# This script is compatible with rsync >=2.6.4 client in Debian Sarge
+# ptssh is compatible with rsync >=2.6.4 client in Debian Sarge
 # (2005-06-06). Maybe it works with even older versions of rsync.
 #
-# This script can't run from a FAT filesystem (or other non-Unix
+# ptssh can't run from a FAT filesystem (or other non-Unix
 # filesystems), because `chmod' below isn't able to remove rwx permissions
 # for group and other there.
 #
-if false; then  # Skip lines interpreted by OpenSSH ssh(1).
------BEGIN RSA PRIVATE KEY-----
-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
------END RSA PRIVATE KEY-----
-fi
+# !! Add import tool for config creation.
+# !! Add embed tool for merging the config file ~/.ptssh to ptssh.
+#
 if test $# = 0 || test "$1" = --help; then
   test $# = 0 && exec >&2
-  echo "This is portable SSH client by pts."
+  echo "ptssh: portable SSH client"
+  echo "This is free software, GNU GPL >=2.0. There is NO WARRANTY. Use at your risk."
   echo "Usage: $0 [ssh] [<ssh-flag> ...] [<user>@]<hostname> [<command> ...]"
   echo "Usage: $0 scp [<scp-flag> ...] [<user>@]<hostname> [<file> ...]"
   echo "Usage: $0 sftp [<sftp-flag> ...] [<user>@]<hostname>"
   echo "Usage: $0 rsync [-i <identity-file>] [<rsync-flag> ...] <source> [...] <destination>"
+  echo "See details on https://github.com/pts/ptssh"
   test $# = 0 && exit 1
   exit
 fi
 unset H A SSHARG_OPTARGS SSHARG_CMD SSHARG_MODE SSHARG_IDF SSHARG_RSYNC SSHARG_UKHF
-SSHARG_CMD=ssh; SSHARG_MODE=ssh; SSHARG_IDF="$0"
+SSHARG_CMD=ssh; SSHARG_MODE=ssh; SSHARG_IDF=
 A="${1##*/}"
 test "${1%:}" = "$1" || A=  # Force ssh command.
 if test "${A#scp}" != "$A"; then
@@ -199,21 +167,37 @@ if test "$A" || test -z "$H"; then
 fi
 
 # We could also specify `-Y' for trusted X11 forwarding.
-unset SSHARG_USER SSHARG_DUSER SSHARG_PORT SSHARG_HOST SSHARG_HKA SSHARG_X11 SSHARG_HKG SSHARG_HOSTKEY SSHARG_H SSHARG_REST
+unset SSHARG_USER SSHARG_DUSER SSHARG_PORT SSHARG_HOST SSHARG_HKA SSHARG_X11 SSHARG_HKG SSHARG_HOSTKEY SSHARG_H SSHARG_REST SSHARG_HASUSERKEY SSHARG_HASHOST
 if test "${H#*@}" != "$H"; then
   SSHARG_USER="${H%%@*}"
   H="${H#*@}"
 fi
 H="${H%%:*}"  # Remove filename for rsync and scp.
-# !! Allow it to be read from `-i ...' or some other file.
+test -z "$SSHARG_IDF" && test -d "$HOME" && SSHARG_IDF="$HOME/.ptssh"
+if ! test -f "$SSHARG_IDF"; then
+  echo "$0: fatal: missing config file: $SSHARG_IDF" >&2
+  exit 1
+fi
 while read SSHARG_HKA SSHARG_HKG SSHARG_HOSTKEY SSHARG_DUSER SSHARG_PORT SSHARG_HOST SSHARG_X11 SSHARG_H SSHARG_REST; do
+  test "$SSHARG_HKA" = -----BEGIN && SSHARG_H= && SSHARG_HASUSERKEY=1 && continue
+  test -z "$SSHARG_H" && continue
+  test "${SSHARG_HKG#ssh-}" = "$SSHARG_HKG" && test "${SSHARG_HKG#ecdsa-}" = "$SSHARG_HKG" && SSHARG_H= && continue
+  SSHARG_HASHOST=1
   SSHARG_H=",$SSHARG_H,"
-  test "${SSHARG_H#*,$H,}" != "$SSHARG_H" && break
+  # TODO(pts): Fail on duplicate $H.
+  test "${SSHARG_H#*,$H,}" != "$SSHARG_H" && break  # Use first match.
   SSHARG_H=
-done <<'ENDCONFIG'
-host-key-myserver  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDaKdDEczxtMEUFqfpPykApE4LlZKF13vzxtlL8Jnp9EmuAKUsy14/PTLj9ThjBWA20zNwg+DX6Y0niDpS8BGxm7F2bNopViGf1uPR6/P0WThi67UV3us6zym+nCadcngaWvzZG58H+XkZyssCnWnPoXiTA9X4eGDJcMrz0xqIDRnkzUytkH4oVg7Quvn+M0G4DP6Y7EpqgQ6coP8kA8siAkrB5WvXtjU5jgwkesBk+nC4tmpaTndgy9eNXJypeAyR8ZF1J7vY49e4hHCyFa45Y01BqnyaGtKK2WSUEFINi9e5UqSd0pTGmt0evA2XzHxucWZOW49YFgm9FEhD96PzsQgT0oXE8MG9TzhDGXqreiYB8a/TWh+Daxs2CFYt7eSHuM4dTstPJPV3aZvXtUfIhteTvXX/9CIwjNoxmjVbB66z14b6SFyBrmG3ubjZTsK5RCtgNIjVg1Y+4nUuKOLA3hiy1I3rZRmdVSV9jB/1GRWreAxgOL3G/KkzQ4p57TZYDwpNGDPyIks8D8jDX61vF2N4FnyiDN8nJf+RCS5n5YJ6/Bp8Ls7fEH9q/eM4snW6KEMDhu+zdYEK8UfODiDLlMiRSUGRdwJodkiwUb+nfH3OQrjPrsARkHX0/kNW86WiVerU1t0sg4KLWQ7qpAEOlg6mtznSvJ89TwnQqLKQF8Q== myuser  22   myserver.myexampledomain.com   -x myserver,myserver.myexampledomain.com,m
-host-key-myserver2 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDaKdDEczxtMEUFqfpPykApE4LlZKF13vzxtlL8Jnp9EmuAKUsy14/PTLj9ThjBWA20zNwg+DX6Y0niDpS8BGxm7F2bNopViGf1uPR6/P0WThi67UV3us6zym+nCadcngaWvzZG58H+XkZyssCnWnPoXiTA9X4eGDJcMrz0xqIDRnkzUytkH4oVg7Quvn+M0G4DP6Y7EpqgQ6coP8kA8siAkrB5WvXtjU5jgwkesBk+nC4tmpaTndgy9eNXJypeAyR8ZF1J7vY49e4hHCyFa45Y01BqnyaGtKK2WSUEFINi9e5UqSd0pTGmt0evA2XzHxucWZOW49YFgm9FEhD96PzsQgT0oXE8MG9TzhDGXqreiYB8a/TWh+Daxs2CFYt7eSHuM4dTstPJPV3aZvXtUfIhteTvXX/9CIwjNoxmjVbB66z14b6SFyBrmG3ubjZTsK5RCtgNIjVg1Y+4nUuKOLA3hiy1I3rZRmdVSV9jB/1GRWreAxgOL3G/KkzQ4p57TZYDwpNGDPyIks8D8jDX61vF2N4FnyiDN8nJf+RCS5n5YJ6/Bp8Ls7fEH9q/eM4snW6KEMDhu+zdYEK8UfODiDLlMiRSUGRdwJodkiwUb+nfH3OQrjPrsARkHX0/kNW86WiVerU1t0sg4KLWQ7qpAEOlg6mtznSvJ89TwnQqLKQF8Q== myuser2 2345 myserver2.myexampledomain2.com -X myserver2,myserver2.myexampledomain2.com,m2
-ENDCONFIG
+done <"$SSHARG_IDF"
+if test -z "$SSHARG_HASUSERKEY"; then
+  echo "$0: fatal: ssh user identity data missing from config file: $SSHARG_IDF" >&2
+  exit 1
+fi
+if test -z "$SSHARG_HASHOST"; then
+  # TODO(pts): Read host config from "$HOME/.ptssh", while reading the user
+  # identity from `-i ...'.
+  echo "$0: fatal: ssh server hosts missing from config file: $SSHARG_IDF" >&2
+  exit 1
+fi
 if test -z "$SSHARG_H"; then
   echo "$0: fatal: unknown <hostname>: $H" >&2
   exit 1
@@ -230,7 +214,7 @@ elif test "$SSHARG_X11" = -Y; then  # Even OpenSSH 3.8.1 supports this.
 else
   SSHARG_X11="-o ForwardX11=no"
 fi
-SSHARG_UKHF="$0"
+SSHARG_UKHF="$SSHARG_IDF"
 
 A=",$SSHARG_USER,$SSHARG_HKA,$SSHARG_HOST,$SSHARG_PORT,$SSHARG_IDF,$SSHARG_UKHF,$SSHARG_HKG,"
 for H in $A; do
@@ -254,8 +238,12 @@ chmod go-rwx "$SSHARG_IDF" || exit 2
 # modern SSH servers tend to disable kex algorithms
 # diffie-hellman-group-exchange-sha1,diffie-hellman-group1-sha1 supported by
 # OpenSSH 3.8.1.
+#
 # We are not using ssh(1) short flags (e.g. -l, -p, -i, -2, -X, -x, -Y),
 # because they are not supported by scp(1) or sftp(1).
+#
+# Not specifying `-o Batch=yes', because that prevents the passphrase prompt
+# for `-o IdenitityFile=...' from being displayed.
 if test "$SSHARG_MODE" = rsync; then
   # rsync 2.6.4 just uses strtok(3) in do_cmd(...) to tokenize the `-e ...' value.
   # rsync 3.1.3 has a custom argument parser which treats ' and " as quotes (but it still treats \\ as literal).
