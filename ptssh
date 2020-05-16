@@ -8,6 +8,29 @@
 # OpenSSH_4.3p2 Debian-9etch3, OpenSSL 0.9.8c 05 Sep 2006 on Debian Etch),
 # no matter what the system defaults and user defaults for the SSH client are.
 #
+# This script ignores the ssh-agent, and asks for the identity file
+# passphrase each time. This is on purpose. The use case for this script is
+# that the identity file is embedded into the script, and the script works
+# uniformly no matter what its environemnt is.
+#
+# This script is compatible with various Bourne shells: bash, zsh, dash,
+# pdfksh, busybox sh (ash), posh.
+#
+# This script is compatible with OpenSSH >=3.8 client (released 2004-02-34),
+# but it's recommended to upgrade to OpenSSH >=3.9 client (released
+# 2004-08-18), because recent OpenSSH server versions don't support any kex
+# algorithm compatible with the OpenSSH 3.8 client, with the client failing
+# with error `no kex alg'. This script is also compatible with newer OpenSSH
+# clients, e.g. 8.2 (released 2020-02-14).
+#
+# This script is compatible with Debian Sarge (2005-06-06) or later, but
+# recent OpenSSH server versions don't support any kex algorithm compatible
+# with the OpenSSH 3.8.1 client in Debian Sarge, so it's recommended to
+# upgrade to Debian Etch (2007-04-08) instead, which has OpenSSH 4.3.
+#
+# This script is compatible with rsync >=2.6.4 client in Debian Sarge
+# (2005-06-06). Maybe it works with even older versions of rsync.
+#
 # This script can't run from a FAT filesystem (or other non-Unix
 # filesystems), because `chmod' below isn't able to remove rwx permissions
 # for group and other there.
@@ -67,31 +90,113 @@ pRt8BYPdCvHyxhNq6zg0hMJZ0l2NQJkPBj5SbSaiivvaerC91ajDthuJkUc=
 host-key-myserver  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDaKdDEczxtMEUFqfpPykApE4LlZKF13vzxtlL8Jnp9EmuAKUsy14/PTLj9ThjBWA20zNwg+DX6Y0niDpS8BGxm7F2bNopViGf1uPR6/P0WThi67UV3us6zym+nCadcngaWvzZG58H+XkZyssCnWnPoXiTA9X4eGDJcMrz0xqIDRnkzUytkH4oVg7Quvn+M0G4DP6Y7EpqgQ6coP8kA8siAkrB5WvXtjU5jgwkesBk+nC4tmpaTndgy9eNXJypeAyR8ZF1J7vY49e4hHCyFa45Y01BqnyaGtKK2WSUEFINi9e5UqSd0pTGmt0evA2XzHxucWZOW49YFgm9FEhD96PzsQgT0oXE8MG9TzhDGXqreiYB8a/TWh+Daxs2CFYt7eSHuM4dTstPJPV3aZvXtUfIhteTvXX/9CIwjNoxmjVbB66z14b6SFyBrmG3ubjZTsK5RCtgNIjVg1Y+4nUuKOLA3hiy1I3rZRmdVSV9jB/1GRWreAxgOL3G/KkzQ4p57TZYDwpNGDPyIks8D8jDX61vF2N4FnyiDN8nJf+RCS5n5YJ6/Bp8Ls7fEH9q/eM4snW6KEMDhu+zdYEK8UfODiDLlMiRSUGRdwJodkiwUb+nfH3OQrjPrsARkHX0/kNW86WiVerU1t0sg4KLWQ7qpAEOlg6mtznSvJ89TwnQqLKQF8Q== myuser  22   myserver.myexampledomain.com   -x myserver,myserver.myexampledomain.com,m
 host-key-myserver2 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDaKdDEczxtMEUFqfpPykApE4LlZKF13vzxtlL8Jnp9EmuAKUsy14/PTLj9ThjBWA20zNwg+DX6Y0niDpS8BGxm7F2bNopViGf1uPR6/P0WThi67UV3us6zym+nCadcngaWvzZG58H+XkZyssCnWnPoXiTA9X4eGDJcMrz0xqIDRnkzUytkH4oVg7Quvn+M0G4DP6Y7EpqgQ6coP8kA8siAkrB5WvXtjU5jgwkesBk+nC4tmpaTndgy9eNXJypeAyR8ZF1J7vY49e4hHCyFa45Y01BqnyaGtKK2WSUEFINi9e5UqSd0pTGmt0evA2XzHxucWZOW49YFgm9FEhD96PzsQgT0oXE8MG9TzhDGXqreiYB8a/TWh+Daxs2CFYt7eSHuM4dTstPJPV3aZvXtUfIhteTvXX/9CIwjNoxmjVbB66z14b6SFyBrmG3ubjZTsK5RCtgNIjVg1Y+4nUuKOLA3hiy1I3rZRmdVSV9jB/1GRWreAxgOL3G/KkzQ4p57TZYDwpNGDPyIks8D8jDX61vF2N4FnyiDN8nJf+RCS5n5YJ6/Bp8Ls7fEH9q/eM4snW6KEMDhu+zdYEK8UfODiDLlMiRSUGRdwJodkiwUb+nfH3OQrjPrsARkHX0/kNW86WiVerU1t0sg4KLWQ7qpAEOlg6mtznSvJ89TwnQqLKQF8Q== myuser2 2345 myserver2.myexampledomain2.com -X myserver2,myserver2.myexampledomain2.com,m2
 fi
-unset H A SSHOPTARGS
-# Single-letter command-line flags in OpenSSH 7.3--8.2.
-SSHOPTARGS=BDEFIJLOQRSWbceilmopw
-H=
-A=
-# Find the hostname argument (to $H).
+if test $# = 0 || test "$1" = --help; then
+  test $# = 0 && exec >&2
+  echo "This is portable SSH client by pts."
+  echo "Usage: $0 [ssh] [<ssh-flag> ...] [<user>@]<hostname> [<command> ...]"
+  echo "Usage: $0 scp [<scp-flag> ...] [<user>@]<hostname> [<file> ...]"
+  echo "Usage: $0 sftp [<sftp-flag> ...] [<user>@]<hostname>"
+  echo "Usage: $0 rsync [-i <identity-file>] [<rsync-flag> ...] <source> [...] <destination>"
+  test $# = 0 && exit 1
+  exit
+fi
+unset H A SSHARG_OPTARGS SSHARG_CMD SSHARG_MODE SSHARG_IDF SSHARG_RSYNC SSHARG_UKHF
+SSHARG_CMD=ssh; SSHARG_MODE=ssh; SSHARG_IDF="$0"
+A="${1##*/}"
+test "${1%:}" = "$1" || A=  # Force ssh command.
+if test "${A#scp}" != "$A"; then
+  SSHARG_MODE=scp; SSHARG_CMD="$1"; shift
+  # Single-letter flags with argument in scp of OpenSSH 8.2.
+  SSHARG_OPTARGS=cFiJloPS
+elif test "${A#sftp}" != "$A"; then
+  SSHARG_MODE=sftp; SSHARG_CMD="$1"; shift
+  # Single-letter flags with argument in sftp of OpenSSH 8.2.
+  SSHARG_OPTARGS=BbcDFiJloPRSs
+elif test "${A#rsync}" != "$A"; then
+  SSHARG_MODE=rsync; SSHARG_CMD=ssh; SSHARG_RSYNC="$1"; shift
+  # Single-letter flags with argument in rsync 3.1.3.
+  SSHARG_OPTARGS=BeM@Tf
+  # Extract and remove args `-i ...' and `-e ...' from the beginning.
+  while test $# != 0; do
+    if test $# != 1 && test "$1" = -e; then
+      SSHARG_CMD="$2"; shift; shift
+    elif test "${1#-e}" != "$1"; then
+      SSHARG_CMD="${1#-?}"; shift
+    elif test $# != 1 && test "$1" = -i; then
+      # `rsync -i' has a different meaning, but we use `-i' here for the SSH
+      # private key file anyway for consistency with ssh, scp and sftp
+      # commands. Call with `rsync --itemize-changes' instead.
+      SSHARG_IDF="$2"; shift; shift
+    elif test "${1#-i}" != "$1"; then
+      SSHARG_IDF="${1#-?}"; shift
+    else
+      break
+    fi
+  done
+else
+  SSHARG_CMD=ssh
+  test "${A#ssh}" != "$A" && SSHARG_CMD="$1" && shift
+  # Single-letter flags with argument in ssh of OpenSSH 7.3--8.2.
+  SSHARG_OPTARGS=BDEFIJLOQRSWbceilmopw
+fi
+
+# Extract and remove args `-i ...' from the beginning.
+# This is needed by sftp in OpenSSH 3.8.1, which doesn't have the -i flag.
+# Newer versions (such as OpenSSH 6.7) have it. This is also useful so that
+# we don't specify IdentityFile twice, to prevent ssh(1) from trying the
+# same file multiple times.
+while test $# != 0; do
+  if test $# != 1 && test "$1" = -i; then
+    SSHARG_IDF="$2"; shift; shift
+  elif test "${1#-i}" != "$1"; then
+    SSHARG_IDF="${1#-?}"; shift
+  else
+    break
+  fi
+done
+
+# Find the hostname argument (to $H), extract $SSHARG_IDF (-i).
+H=; A=
 for ARG in "$@"; do
+  test "$A" = 3 && SSHARG_IDF="$ARG" && A= && continue
   test "$A" = 2 && A= && continue
-  test "$A" = 1 && H="$ARG" && A= && break
+  test "$A" = 1 && test "$SSHARG_MODE" != rsync && H="$ARG" && A= && break
   if test "$ARG" = -; then
-    H="$ARG"
-    break
-  elif test "$ARG" == --; then
+    if test "$SSHARG_MODE" != rsync; then
+      H="$ARG"
+      break
+    fi
+  elif test "$ARG" = --; then
     A=1
-  elif test "${ARG#-}" = "$ARG"; then
-    H="$ARG"
-    break
-  elif test "${ARG#-??}" = "$ARG"; then  # Single-letter arg.
-    case "$SSHOPTARGS" in
-     *"${ARG#-}"*) A=2 ;;  # Skip next arg.
-    esac
+  elif test "${ARG#-}" = "$ARG" || test "$A" = 1; then  # Not a flag.
+    if test "$SSHARG_MODE" != rsync || test "${ARG#*:}" != "$ARG"; then
+      A=; H="$ARG"
+      break
+    fi
+  elif test "$SSHARG_MODE" = rsync && test "${ARG#-[-ei]}" != "$ARG"; then
+    if test "$A" != 1; then
+      if test "${ARG#--}" = "$ARG"; then
+        # It would be better if we could remove the arg. But it's hard to
+        # remove from the middle of "$@", so we rather fail.
+        echo "$0: fatal: flag too late for rsync: $ARG" >&2
+        exit 1
+      fi
+    fi
+    # Skip --exclude='*~'. We are too dumb to skip `--exclude '*~''.
+  elif test "${ARG#-??}" = "$ARG" && test "$A" != 1; then  # Single-letter flag with arg.
+    if test "$ARG" = -i; then
+      A=3
+    else
+      case "$SSHARG_OPTARGS" in
+       *"${ARG#-}"*) A=2 ;;  # Skip next arg.
+      esac
+    fi
+  elif test "${ARG#-i}" != "$ARG"; then
+    SSHARG_IDF="${ARG#-i}"
   fi
 done
 if test "$A" || test -z "$H"; then
-  echo "$0: fatal: <hostname> argument not found" >&2
+  echo "$0: fatal: ssh <hostname> argument not found" >&2
   exit 1
 fi
 
@@ -101,6 +206,8 @@ if test "${H#*@}" != "$H"; then
   SSHARG_USER="${H%%@*}"
   H="${H#*@}"
 fi
+H="${H%%:*}"  # Remove filename for rsync and scp.
+# !! Unify this with host-key-* and move it tou $SSHARG_IDF.
 case "$H" in
  myserver | myserver.myexampledomain.com | m)
   SSHARG_DUSER=myuser; SSHARG_PORT=22; SSHARG_HOST=myserver.myexampledomain.com; SSHARG_HKA=myserver; SSHARG_X11=-x ;;
@@ -111,14 +218,56 @@ case "$H" in
   exit 1
 esac
 test "$SSHARG_USER" || SSHARG_USER="$SSHARG_DUSER"
+if test "$SSHARG_MODE" != ssh; then
+  SSHARG_X11="-o ForwardX11=no"
+elif test "$SSHARG_X11" = -X; then
+  SSHARG_X11="-o ForwardX11=yes"
+elif test "$SSHARG_X11" = -x; then
+  SSHARG_X11="-o ForwardX11=no"
+elif test "$SSHARG_X11" = -Y; then  # Even OpenSSH 3.8.1 supports this.
+  SSHARG_X11="-o ForwardX11=yes -o ForwardX11Trusted=yes"
+else
+  SSHARG_X11="-o ForwardX11=no"
+fi
+SSHARG_UKHF="$0"
 
+A=",$SSHARG_USER,$SSHARG_HKA,$SSHARG_HOST,$SSHARG_PORT,$SSHARG_IDF,$SSHARG_UKHF,"
+for H in $A; do
+  if test "$H" != "$A"; then
+    # OpenSSH 3.8--8.2 report `command-line line 0: garbage at end of line'
+    # if there is whitespace in the `-o ...=...' value. Escaping with \\
+    # doesn't help either. We display a more user-friendly error instead.
+    echo "$0: fatal: whitespace in ssh options" >&2
+    exit 1
+  fi
+done
+
+# TODO(pts): Optionally, start a new ssh-agent if available, and enable agent
+# forwarding. Also, optionally, use the existing ssh-agent, and add the key.
 SSH_AUTH_SOCK=  # Disable usage of ssh-agent.
 export SSH_AUTH_SOCK
 # No way to disable this check on the private key (-i):
 # https://github.com/openssh/openssh-portable/blob/4fa9e048c2af26beb7dc2ee9479ff3323e92a7b5/authfile.c#L104-L113
-chmod go-rwx "$0" || exit 2
-# Works with: OpenSSH_4.3p2 Debian-9etch3, OpenSSL 0.9.8c 05 Sep 2006
-# Doesn't work with: OpenSSH_3.8.1p1 Debian-8.sarge.6, OpenSSL 0.9.7e 25 Oct 2004: no kex alg
-exec ssh -l "$SSHARG_USER" -o HostKeyAlias=host-key-"$SSHARG_HKA" -o HostName="$SSHARG_HOST" -p "$SSHARG_PORT" -i "$0" -o UserKnownHostsFile="$0" "$SSHARG_X11" \
-    -2 -F /dev/null -o HostKeyAlgorithms=ssh-rsa -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
+chmod go-rwx "$SSHARG_IDF" || exit 2
+# Works with: OpenSSH >=3.9. It doesn't work with OpenSSH <=3.8.1, because
+# modern SSH servers tend to disable kex algorithms
+# diffie-hellman-group-exchange-sha1,diffie-hellman-group1-sha1 supported by
+# OpenSSH 3.8.1.
+# We are not using ssh(1) short flags (e.g. -l, -p, -i, -2, -X, -x, -Y),
+# because they are not supported by scp(1) or sftp(1).
+if test "$SSHARG_MODE" = rsync; then
+  # rsync 2.6.4 just uses strtok(3) in do_cmd(...) to tokenize the `-e ...' value.
+  # rsync 3.1.3 has a custom argument parser which treats ' and " as quotes (but it still treats \\ as literal).
+  # Maybe future versions of rsync will call /bin/sh (via popen(3) or system(3)).
+  # We play it safe by failing early on shell metacharacters.
+  if test "${A#*[\'\"\\\$\?\*\(\)\`\#~\%\[\{\}]}" != "$A"; then
+    echo "$0: fatal: unsafe rsync ssh argument" >&2
+    exit 1
+  fi
+  exec "$SSHARG_RSYNC" -e "$SSHARG_CMD -F /dev/null -o User=$SSHARG_USER -o HostKeyAlias=host-key-$SSHARG_HKA -o HostName=$SSHARG_HOST -o Port=$SSHARG_PORT -o IdentityFile=$SSHARG_IDF -o UserKnownHostsFile=$SSHARG_UKHF $SSHARG_X11 \
+      -o Protocol=2 -o HostKeyAlgorithms=ssh-rsa -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
+      -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no" "$@"
+fi
+exec "$SSHARG_CMD" -F /dev/null -o User="$SSHARG_USER" -o HostKeyAlias=host-key-"$SSHARG_HKA" -o HostName="$SSHARG_HOST" -o Port="$SSHARG_PORT" -o IdentityFile="$SSHARG_IDF" -o UserKnownHostsFile="$SSHARG_UKHF" $SSHARG_X11 \
+    -o Protocol=2 -o HostKeyAlgorithms=ssh-rsa -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
     -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no "$@"
