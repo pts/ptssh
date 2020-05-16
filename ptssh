@@ -199,25 +199,25 @@ if test "$A" || test -z "$H"; then
 fi
 
 # We could also specify `-Y' for trusted X11 forwarding.
-unset SSHARG_USER SSHARG_DUSER SSHARG_PORT SSHARG_HOST SSHARG_HKA SSHARG_X11 SSHARG_HKG
+unset SSHARG_USER SSHARG_DUSER SSHARG_PORT SSHARG_HOST SSHARG_HKA SSHARG_X11 SSHARG_HKG SSHARG_HOSTKEY SSHARG_H SSHARG_REST
 if test "${H#*@}" != "$H"; then
   SSHARG_USER="${H%%@*}"
   H="${H#*@}"
 fi
 H="${H%%:*}"  # Remove filename for rsync and scp.
 # !! Allow it to be read from `-i ...' or some other file.
-case "$H" in '')
-;; myserver | myserver.myexampledomain.com | m) set \
-host-key-myserver  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDaKdDEczxtMEUFqfpPykApE4LlZKF13vzxtlL8Jnp9EmuAKUsy14/PTLj9ThjBWA20zNwg+DX6Y0niDpS8BGxm7F2bNopViGf1uPR6/P0WThi67UV3us6zym+nCadcngaWvzZG58H+XkZyssCnWnPoXiTA9X4eGDJcMrz0xqIDRnkzUytkH4oVg7Quvn+M0G4DP6Y7EpqgQ6coP8kA8siAkrB5WvXtjU5jgwkesBk+nC4tmpaTndgy9eNXJypeAyR8ZF1J7vY49e4hHCyFa45Y01BqnyaGtKK2WSUEFINi9e5UqSd0pTGmt0evA2XzHxucWZOW49YFgm9FEhD96PzsQgT0oXE8MG9TzhDGXqreiYB8a/TWh+Daxs2CFYt7eSHuM4dTstPJPV3aZvXtUfIhteTvXX/9CIwjNoxmjVbB66z14b6SFyBrmG3ubjZTsK5RCtgNIjVg1Y+4nUuKOLA3hiy1I3rZRmdVSV9jB/1GRWreAxgOL3G/KkzQ4p57TZYDwpNGDPyIks8D8jDX61vF2N4FnyiDN8nJf+RCS5n5YJ6/Bp8Ls7fEH9q/eM4snW6KEMDhu+zdYEK8UfODiDLlMiRSUGRdwJodkiwUb+nfH3OQrjPrsARkHX0/kNW86WiVerU1t0sg4KLWQ7qpAEOlg6mtznSvJ89TwnQqLKQF8Q== myuser  22   myserver.myexampledomain.com   -x "$@"
-;; myserver2 | myserver2.myexampledomain2.com | m2) set \
-host-key-myserver2 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDaKdDEczxtMEUFqfpPykApE4LlZKF13vzxtlL8Jnp9EmuAKUsy14/PTLj9ThjBWA20zNwg+DX6Y0niDpS8BGxm7F2bNopViGf1uPR6/P0WThi67UV3us6zym+nCadcngaWvzZG58H+XkZyssCnWnPoXiTA9X4eGDJcMrz0xqIDRnkzUytkH4oVg7Quvn+M0G4DP6Y7EpqgQ6coP8kA8siAkrB5WvXtjU5jgwkesBk+nC4tmpaTndgy9eNXJypeAyR8ZF1J7vY49e4hHCyFa45Y01BqnyaGtKK2WSUEFINi9e5UqSd0pTGmt0evA2XzHxucWZOW49YFgm9FEhD96PzsQgT0oXE8MG9TzhDGXqreiYB8a/TWh+Daxs2CFYt7eSHuM4dTstPJPV3aZvXtUfIhteTvXX/9CIwjNoxmjVbB66z14b6SFyBrmG3ubjZTsK5RCtgNIjVg1Y+4nUuKOLA3hiy1I3rZRmdVSV9jB/1GRWreAxgOL3G/KkzQ4p57TZYDwpNGDPyIks8D8jDX61vF2N4FnyiDN8nJf+RCS5n5YJ6/Bp8Ls7fEH9q/eM4snW6KEMDhu+zdYEK8UfODiDLlMiRSUGRdwJodkiwUb+nfH3OQrjPrsARkHX0/kNW86WiVerU1t0sg4KLWQ7qpAEOlg6mtznSvJ89TwnQqLKQF8Q== myuser2 2345 myserver2.myexampledomain2.com -X "$@"
-;; *)
+while read SSHARG_HKA SSHARG_HKG SSHARG_HOSTKEY SSHARG_DUSER SSHARG_PORT SSHARG_HOST SSHARG_X11 SSHARG_H SSHARG_REST; do
+  SSHARG_H=",$SSHARG_H,"
+  test "${SSHARG_H#*,$H,}" != "$SSHARG_H" && break
+  SSHARG_H=
+done <<'ENDCONFIG'
+host-key-myserver  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDaKdDEczxtMEUFqfpPykApE4LlZKF13vzxtlL8Jnp9EmuAKUsy14/PTLj9ThjBWA20zNwg+DX6Y0niDpS8BGxm7F2bNopViGf1uPR6/P0WThi67UV3us6zym+nCadcngaWvzZG58H+XkZyssCnWnPoXiTA9X4eGDJcMrz0xqIDRnkzUytkH4oVg7Quvn+M0G4DP6Y7EpqgQ6coP8kA8siAkrB5WvXtjU5jgwkesBk+nC4tmpaTndgy9eNXJypeAyR8ZF1J7vY49e4hHCyFa45Y01BqnyaGtKK2WSUEFINi9e5UqSd0pTGmt0evA2XzHxucWZOW49YFgm9FEhD96PzsQgT0oXE8MG9TzhDGXqreiYB8a/TWh+Daxs2CFYt7eSHuM4dTstPJPV3aZvXtUfIhteTvXX/9CIwjNoxmjVbB66z14b6SFyBrmG3ubjZTsK5RCtgNIjVg1Y+4nUuKOLA3hiy1I3rZRmdVSV9jB/1GRWreAxgOL3G/KkzQ4p57TZYDwpNGDPyIks8D8jDX61vF2N4FnyiDN8nJf+RCS5n5YJ6/Bp8Ls7fEH9q/eM4snW6KEMDhu+zdYEK8UfODiDLlMiRSUGRdwJodkiwUb+nfH3OQrjPrsARkHX0/kNW86WiVerU1t0sg4KLWQ7qpAEOlg6mtznSvJ89TwnQqLKQF8Q== myuser  22   myserver.myexampledomain.com   -x myserver,myserver.myexampledomain.com,m
+host-key-myserver2 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDaKdDEczxtMEUFqfpPykApE4LlZKF13vzxtlL8Jnp9EmuAKUsy14/PTLj9ThjBWA20zNwg+DX6Y0niDpS8BGxm7F2bNopViGf1uPR6/P0WThi67UV3us6zym+nCadcngaWvzZG58H+XkZyssCnWnPoXiTA9X4eGDJcMrz0xqIDRnkzUytkH4oVg7Quvn+M0G4DP6Y7EpqgQ6coP8kA8siAkrB5WvXtjU5jgwkesBk+nC4tmpaTndgy9eNXJypeAyR8ZF1J7vY49e4hHCyFa45Y01BqnyaGtKK2WSUEFINi9e5UqSd0pTGmt0evA2XzHxucWZOW49YFgm9FEhD96PzsQgT0oXE8MG9TzhDGXqreiYB8a/TWh+Daxs2CFYt7eSHuM4dTstPJPV3aZvXtUfIhteTvXX/9CIwjNoxmjVbB66z14b6SFyBrmG3ubjZTsK5RCtgNIjVg1Y+4nUuKOLA3hiy1I3rZRmdVSV9jB/1GRWreAxgOL3G/KkzQ4p57TZYDwpNGDPyIks8D8jDX61vF2N4FnyiDN8nJf+RCS5n5YJ6/Bp8Ls7fEH9q/eM4snW6KEMDhu+zdYEK8UfODiDLlMiRSUGRdwJodkiwUb+nfH3OQrjPrsARkHX0/kNW86WiVerU1t0sg4KLWQ7qpAEOlg6mtznSvJ89TwnQqLKQF8Q== myuser2 2345 myserver2.myexampledomain2.com -X myserver2,myserver2.myexampledomain2.com,m2
+ENDCONFIG
+if test -z "$SSHARG_H"; then
   echo "$0: fatal: unknown <hostname>: $H" >&2
   exit 1
-esac
-SSHARG_HKA="$1"; SSHARG_HKG="$2"; SSHARG_DUSER="$4"; SSHARG_PORT="$5"; SSHARG_HOST="$6"; SSHARG_X11=-"$7"
-shift; shift; shift; shift; shift; shift; shift
-#echo "!! ($SSHARG_DUSER) $@"; exit 42
+fi
 test "$SSHARG_USER" || SSHARG_USER="$SSHARG_DUSER"
 if test "$SSHARG_MODE" != ssh; then
   SSHARG_X11="-o ForwardX11=no"
