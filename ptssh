@@ -297,7 +297,8 @@ if test "$SSHARG_MODE" = import; then
   # ~/.ssh/config.
   set -- $(H=echo; "$SSHARG_CMD" -o HostKeyAlias="$SSHARG_HKA" -o IdentityFile=/dev/null -o UserKnownHostsFile="$SSHARG_UKHF" $SSHARG_X11 \
       -o Protocol=2 -o HostKeyAlgorithms="$SSHARG_HKG" -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
-      -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no -o ProxyCommand='sh -c "echo PTSSH_NHPR '\''.%h'\'' '\''.%p'\'' '\''.%r'\'' END_PTSSH_NHPR >&2"' "$@" 2>&1 |
+      -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no -o KbdInteractiveAuthentication=no \
+      -o ProxyCommand='sh -c "echo PTSSH_NHPR '\''.%h'\'' '\''.%p'\'' '\''.%r'\'' END_PTSSH_NHPR >&2"' "$@" 2>&1 |
       while read A; do test "${A#PTSSH_NHPR }" != "$A" && $H "$A" && H=:; done) "$@"
   if test "$1" != PTSSH_NHPR; then
     echo "$0: fatal: querying hostname failed with ProxyCommand" >&2
@@ -350,7 +351,7 @@ if test "$SSHARG_MODE" = import; then
     # Explicit BatchMode=no to counteract ~/.ssh/config `BatchMode yes', and thus be able to ask for passphrase.
     "$SSHARG_CMD" -v -o BatchMode=no -o HostKeyAlias="$SSHARG_HKA" $SSHARG_IDFARG -o UserKnownHostsFile="$SSHARG_UKHF" \
         -o Protocol=2 -o HostKeyAlgorithms="$SSHARG_HKG" -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \
-        -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no "$@" true 2>&1 | (
+        -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no -o KbdInteractiveAuthentication=no "$@" true 2>&1 | (
     unset UIF AUTH
     AUTH=unknown; SSHARG_X11=-x
     while read A; do
@@ -512,8 +513,8 @@ if test "$SSHARG_MODE" = rsync; then
   fi
   exec "$SSHARG_RSYNC" -e "$SSHARG_CMD -F /dev/null -o User=$SSHARG_USER -o HostKeyAlias=$SSHARG_HKA -o HostName=$SSHARG_HOST -o Port=$SSHARG_PORT -o IdentityFile=$SSHARG_IDF -o UserKnownHostsFile=$SSHARG_UKHF $SSHARG_X11 \
       -o Protocol=2 -o HostKeyAlgorithms=$SSHARG_HKG -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
-      -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no" "$@"
+      -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no -o KbdInteractiveAuthentication=no" "$@"
 fi
 exec "$SSHARG_CMD" -F /dev/null -o User="$SSHARG_USER" -o HostKeyAlias="$SSHARG_HKA" -o HostName="$SSHARG_HOST" -o Port="$SSHARG_PORT" -o IdentityFile="$SSHARG_IDF" -o UserKnownHostsFile="$SSHARG_UKHF" $SSHARG_X11 \
     -o Protocol=2 -o HostKeyAlgorithms="$SSHARG_HKG" -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
-    -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no "$@"
+    -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no -o KbdInteractiveAuthentication=no "$@"
