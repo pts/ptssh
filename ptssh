@@ -22,7 +22,70 @@
 # ~/.ptssh. A sample config file is also provided in the file
 # `config.ptssh.sample'.
 #
-# TODO(pts): Write tutorial on creating the config file.
+# TODO(pts): Write a detailed tutorial on creating the config file.
+#
+# It's possible to embed the config into the ptssh script by just
+# concatenating them:
+#
+#   $ cat ptssh ~/.ptssh >ptssh_merged
+#   $ chmod +x ptssh_merged
+#   $ ./ptssh_merged myserver1  # Example call.
+#
+# Then `./ptssh_merged ...' won't read ~/.ptssh, but it would use the
+# embedded user identity and server specifications.
+#
+# A limitation of embedding: the user identity must be an RSA or DSA
+# (ssh-dss) private key in the traditional OpenSSL PEM format
+# (-----BEGIN RSA PRIVATE KEY----; or -----BEGIN DSA PRIVATE KEY-----)
+# or in the PKCS#8 PEM format
+# (-----BEGIN PRIVATE KEY----- or -----BEGIN ENCRYPTED PRIVATE KEY-----).
+# The native OpenSSH format (-----BEGIN OPENSSH PRIVATE KEY-----) won't work
+# (ssh(1) error message: `Load key "...": invalid format') for embedding.
+# Other key algorithms (e.g. ssh-ed25519) won't work either.
+#
+# Run these commands to generate a new passphrase-protected RSA private key,
+# and embed it to ptssh:
+#
+#    $ openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 |
+#      openssl pkcs8 -out embed_id_rsa -topk8 -v2 aes-256-cbc -v2prf hmacWithSHA1 -iter 4200000
+#    $ (cat ptssh embed_id_rsa; grep '^ptssh-hostkey-' ~/.ptssh) >ptssh_merged
+#    $ chmod +x ./ptssh_merged
+#
+# TODO(pts): Automate the conversion below with secure defaults.
+#
+# Run these commands to convert existing RSA or DSA private key (in any of these
+# formats:
+# ----BEGIN RSA PRIVATE KEY-----;
+# ----BEGIN DSA PRIVATE KEY-----;
+# ----BEGIN OPENSSH PRIVATE KEY-----) in ~/.ptssh to a passphrase-proteced
+# private key of the right format (-----BEGIN ENCRYPTED PRIVATE KEY-----)
+# and embed it to ptssh:
+#
+#    $ puttygen -P -O private-openssh -o embed.tmp ~/.ptssh
+#    Enter passphrase to load key:
+#    Enter passphrase to save key:    (specify empty passphrase)
+#    Re-enter passphrase to verify:   (specify empty passphrase)
+#    $ openssl pkcs8 -out embed.pem -in embed.tmp -topk8 -v2 aes-256-cbc -v2prf hmacWithSHA1 -iter 4200000
+#    Enter Encryption Password:
+#    Verifying - Enter Encryption Password:
+#    $ rm -f embed.tmp
+#    $ (cat ptssh embed.pem; grep '^ptssh-hostkey-' ~/.ptssh) >ptssh_merged
+#    $ chmod +x ./ptssh_merged
+#
+# Please note that neither openssl(1) nor ssh-keygen(1) are able to do the
+# conversion above, but puttygen(1) is. On Debian, install puttygen(1) with
+# `sudo apt-get install putty-tools'.
+#
+# Please note that it's possible to have password-protected RSA and DSA
+# private keys in the traditional formats
+# ( ----BEGIN RSA PRIVATE KEY-----; and ----BEGIN DSA PRIVATE KEY-----),
+# but those are insecure, because they generate the decryption key by doing
+# a single MD5 digest call, and thus the attacker can try (brute-force)
+# millions of passphrases per second. The alternative above (`openssl pkcs8
+# ... -iter 4200000) uses PBKDF2 with a sufficiently large iteration count
+# (equivalent to `ssh-keygen -a 400') to protect against brute-force
+# attacks. The output private key is compatible with OpenSSH >=3.8 (or even
+# earlier).
 #
 # ptssh is very portable: it uses RSA hostkeys by default, and it works with
 # OpenSSH >=3.8 (checked with OpenSSH 8.2, OpenSSH 7.4, OpenSSH 3.8.1, and
