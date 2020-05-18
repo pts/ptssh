@@ -14,30 +14,34 @@
 # To start using ptssh, you need to create the config file ~/.ptssh first.
 # This config file contains the user identity (private key), and for each
 # server the server hostkey, server connection information (hostname, port,
-# username) and server X11 forwarding config. Currently no help is provided
-# on creating the config file. A sample is provided in the file
+# username) and server X11 forwarding config. The easiest way to create a
+# config file is importing from ssh(1), e.g. `./ptssh import myserver1' and
+# `./ptssh import myuser@myserver2'. It possible to import mupltiple times
+# if the user identity (private key) is the same; in this case subsequent
+# imported server specifications will be appended to the config file
+# ~/.ptssh. A sample config file is also provided in the file
 # `config.ptssh.sample'.
 #
 # TODO(pts): Write tutorial on creating the config file.
 #
-# ptssh is very portable compatible: it uses RSA keys by default, and it
-# works with OpenSSH >=3.8 (checked with OpenSSH 8.2, OpenSSH 7.4, OpenSSH
-# 3.8.1, and OpenSSH_4.3p2 Debian-9etch3, OpenSSL 0.9.8c 05 Sep 2006 on
-# Debian Etch), no matter what the system defaults and user defaults for the
-# SSH client are. It also works with various Bourne shells: bash, zsh, dash,
-# pdfksh, busybox sh (ash), posh.
+# ptssh is very portable: it uses RSA hostkeys by default, and it works with
+# OpenSSH >=3.8 (checked with OpenSSH 8.2, OpenSSH 7.4, OpenSSH 3.8.1, and
+# OpenSSH_4.3p2 Debian-9etch3, OpenSSL 0.9.8c 05 Sep 2006 on Debian Etch,
+# OpenSSL 0.9.7e on Debian Sarge), no matter what the system defaults and
+# user defaults for the SSH client are. It also works with various Bourne
+# shells: bash, zsh, dash, pdfksh, busybox sh (ash), posh.
 #
 # ptssh is compatible with OpenSSH >=3.8 client (released 2004-02-34), but
 # it's recommended to upgrade to OpenSSH >=3.9 client (released 2004-08-18),
 # because recent OpenSSH server versions don't support any kex (key
 # exchange) algorithm compatible with the OpenSSH 3.8 client, with the
-# client failing with error `no kex alg'. This script is also compatible
+# client failing with error `no kex alg'. ptssh is also compatible
 # with newer OpenSSH clients, e.g. 8.2 (released 2020-02-14).
 #
 # ptssh ignores the ssh-agent, and asks for the identity file passphrase
-# each time. This is on purpose. One use case for ptssh is that the identity
-# file is embedded into the script, and the script works uniformly no matter
-# what its environment is.
+# each time. This is on purpose. The goal is to make to ptssh run
+# independently and identically on any system and environment (given the
+# same config file), and the use of ssh-agent would introduce variance.
 #
 # ptssh is also compatible with Debian Sarge (2005-06-06) or later, but
 # recent OpenSSH server versions don't support any kex algorithm compatible
@@ -47,9 +51,9 @@
 # ptssh is compatible with rsync >=2.6.4 client in Debian Sarge
 # (2005-06-06). Maybe it works with even older versions of rsync.
 #
-# ptssh can't run from a FAT filesystem (or other non-Unix
-# filesystems), because `chmod' below isn't able to remove rwx permissions
-# for group and other there.
+# ptssh can't run from a FAT filesystem (or other non-Unix filesystems),
+# because `chmod' below isn't able to remove rwx permissions for group and
+# other there. This can be a problem if it's run from USB pen drives.
 #
 # TODO(pts): Add embed tool for merging the config file ~/.ptssh to ptssh.
 # `-----BEGIN OPENSSH PRIVATE KEY-----' works only in the beginning. Also
