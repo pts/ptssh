@@ -51,8 +51,7 @@
 # filesystems), because `chmod' below isn't able to remove rwx permissions
 # for group and other there.
 #
-# !! Add import tool for config creation.
-# !! Add embed tool for merging the config file ~/.ptssh to ptssh.
+# TODO(pts): Add embed tool for merging the config file ~/.ptssh to ptssh.
 #
 if test $# = 0 || test "$1" = --help; then
   test $# = 0 && exec >&2
@@ -67,9 +66,10 @@ if test $# = 0 || test "$1" = --help; then
   exit
 fi
 unset H A SSHARG_OPTARGS SSHARG_CMD SSHARG_MODE SSHARG_IDF SSHARG_RSYNC SSHARG_UKHF
-SSHARG_CMD=ssh; SSHARG_MODE=ssh; SSHARG_IDF=
 A="${1##*/}"
 test "${1%:}" = "$1" || A=  # Force ssh command.
+# Single-letter flags with argument in ssh of OpenSSH 7.3--8.2.
+SSHARG_OPTARGS=BDEFIJLOQRSWbceilmopw
 if test "${A#scp}" != "$A"; then
   SSHARG_MODE=scp; SSHARG_CMD="$1"; shift
   # Single-letter flags with argument in scp of OpenSSH 8.2.
@@ -99,11 +99,14 @@ elif test "${A#rsync}" != "$A"; then
       break
     fi
   done
-else
-  SSHARG_CMD=ssh
+elif test "${A#import}" != "$A"; then
+  SSHARG_MODE=import; SSHARG_CMD=ssh; shift
+  A="${1##*/}"
+  test "${1%:}" = "$1" || A=  # Force ssh command.
   test "${A#ssh}" != "$A" && SSHARG_CMD="$1" && shift
-  # Single-letter flags with argument in ssh of OpenSSH 7.3--8.2.
-  SSHARG_OPTARGS=BDEFIJLOQRSWbceilmopw
+else
+  SSHARG_MODE=ssh; SSHARG_CMD=ssh
+  test "${A#ssh}" != "$A" && SSHARG_CMD="$1" && shift
 fi
 
 # Extract and remove args `-i ...' from the beginning.
@@ -167,35 +170,290 @@ if test "$A" || test -z "$H"; then
 fi
 
 # We could also specify `-Y' for trusted X11 forwarding.
-unset SSHARG_USER SSHARG_DUSER SSHARG_PORT SSHARG_HOST SSHARG_HKA SSHARG_X11 SSHARG_HKG SSHARG_HOSTKEY SSHARG_H SSHARG_REST SSHARG_HASUSERKEY SSHARG_HASHOST
+unset SSHARG_USER SSHARG_DUSER SSHARG_PORT SSHARG_HOST SSHARG_HKA SSHARG_X11 SSHARG_HKG SSHARG_HOSTKEY SSHARG_H SSHARG_REST SSHARG_HASUSERKEY SSHARG_HASHOST SSHARG_HASANY SSHARG_HKA2 SSHARG_HKG2 SSHARG_CF
 if test "${H#*@}" != "$H"; then
   SSHARG_USER="${H%%@*}"
   H="${H#*@}"
 fi
 H="${H%%:*}"  # Remove filename for rsync and scp.
-test -z "$SSHARG_IDF" && test -d "$HOME" && SSHARG_IDF="$HOME/.ptssh"
-if ! test -f "$SSHARG_IDF"; then
-  echo "$0: fatal: missing config file: $SSHARG_IDF" >&2
+if test -z "$H"; then
+  echo "$0: fatal: empty host: $H" >&2
   exit 1
 fi
+for A in $H; do
+  if test "$A" != "$H"; then
+    echo "$0: fatal: whitespace in host: $H" >&2
+    exit 1
+  fi
+done
+
+if test "$SSHARG_MODE" = import; then
+  if test -z "$HOME"; then
+    echo "$0: fatal: no \$HOME directory set, needed for import" >&2
+    exit 1
+  fi
+  SSHARG_CF="$HOME/.ptssh"  # Ignore $SSHARG_IDF (`-i ...').
+  test "${SSHARG_CF#-}" = "$SSHARG_CF" || SSHARG_CF="./$SSHARG_CF"
+  if ! : >>"$SSHARG_CF"; then
+    echo "$0: error opening config file for write: $SSHARG_CF" >&2
+    exit 1
+  fi
+  if ! chmod go-rwx "$SSHARG_CF"; then
+    echo "$0: error restricting permissions of config file: $SSHARG_CF" >&2
+    exit 1
+  fi
+else
+  test -z "$SSHARG_IDF" && test -d "$HOME" && SSHARG_IDF="$HOME/.ptssh"  # !! Support multiple read locations.
+  SSHARG_CF="$SSHARG_IDF"
+  if ! test -f "$SSHARG_CF"; then
+    echo "$0: fatal: missing config file: $SSHARG_CF" >&2
+    exit 1
+  fi
+fi
+
+# Parse the config file in $SSHARG_CF.
+SSHARG_HASUSERKEY=; SSHARG_HASHOST=; SSHARG_H=
 while read SSHARG_HKA SSHARG_HKG SSHARG_HOSTKEY SSHARG_DUSER SSHARG_PORT SSHARG_HOST SSHARG_X11 SSHARG_H SSHARG_REST; do
+  SSHARG_HASANY=1
   test "$SSHARG_HKA" = -----BEGIN && SSHARG_H= && SSHARG_HASUSERKEY=1 && continue
   test -z "$SSHARG_H" && continue
   test "${SSHARG_HKG#ssh-}" = "$SSHARG_HKG" && test "${SSHARG_HKG#ecdsa-}" = "$SSHARG_HKG" && SSHARG_H= && continue
   SSHARG_HASHOST=1
   SSHARG_H=",$SSHARG_H,"
-  # TODO(pts): Fail on duplicate $H.
-  test "${SSHARG_H#*,$H,}" != "$SSHARG_H" && break  # Use first match.
+  if test "${SSHARG_H#*,$H,}" != "$SSHARG_H"; then
+    while read SSHARG_HKA2 SSHARG_HKG2 SSHARG_REST SSHARG_REST SSHARG_REST SSHARG_REST SSHARG_REST SSHARG_H SSHARG_REST; do
+      test -z "$SSHARG_H" && continue
+      test "${SSHARG_HKG#ssh-}" = "$SSHARG_HKG" && test "${SSHARG_HKG#ecdsa-}" = "$SSHARG_HKG" && continue
+      SSHARG_H=",$SSHARG_H,"
+      if test "${SSHARG_H#*,$H,}" != "$SSHARG_H"; then
+        echo "$0: fatal: duplicate host $H in config file: $SSHARG_CF" >&2
+        exit 1
+      fi
+    done
+    SSHARG_H="$H"
+    break  # Use first match.
+  fi
   SSHARG_H=
-done <"$SSHARG_IDF"
+done <"$SSHARG_CF"
+if test "$SSHARG_H" && test "$SSHARG_HKA"; then
+  A=
+  while read SSHARG_HKA2 SSHARG_HKG2 SSHARG_REST SSHARG_REST SSHARG_REST SSHARG_REST SSHARG_REST SSHARG_H SSHARG_REST; do
+    test -z "$SSHARG_H" && continue
+    test "${SSHARG_HKG#ssh-}" = "$SSHARG_HKG" && test "${SSHARG_HKG#ecdsa-}" = "$SSHARG_HKG" && continue
+    if test "$SSHARG_HKA2" = "$SSHARG_HKA"; then
+      if test "$A"; then
+        echo "$0: fatal: duplicate hostkey alias $SSHARG_HKA in config file: $SSHARG_CF" >&2
+        exit 1
+      fi
+      A=1
+    fi
+  done <"$SSHARG_CF"
+  SSHARG_H="$H"
+fi
+A=
+
+if test "$SSHARG_MODE" = import; then
+  if test "$SSHARG_HASANY" && test -z "$SSHARG_HASUSERKEY"; then
+    echo "$0: fatal: ssh user identity private key is missing from config file: $SSHARG_CF" >&2
+    exit 1
+  fi
+  if test "$SSHARG_H"; then
+    echo "$0: fatal: host $H already present in config file: $SSHARG_CF" >&2
+    exit 1
+  fi
+
+  SSHARG_UKHF="$HOME/.ptssh.ukhf.$$.tmp"
+  trap 'rm -f "$SSHARG_UKHF"' EXIT 2>/dev/null
+  if ! : >"$SSHARG_UKHF"; then
+    echo "$0: error clobbering: $SSHARG_UKHF" >&2
+    exit 1
+  fi
+
+  # Disable usage of ssh-agent. If ssh-agent wasn't disabled, then for $UIF
+  # detection OpenSSH 8.2 would try the configured key in the ssh-agent
+  # first (having priority over $SSHARG_IDFARG).
+  unset SSH_AUTH_SOCK SSH_AUTH_SOCK_FAST
+
+  SSHARG_HKG=ssh-rsa  # Oldest, most compatible.
+  A="$("$SSHARG_CMD" -o HostKeyAlgorithms=ssh-ed25519 2>&1)"
+  test "${A#usage: }" = "$A" || SSHARG_HKG="$SSHARG_HKG,ssh-ed25519"
+  A="$("$SSHARG_CMD" -o HostKeyAlgorithms=ecdsa-sha2-nistp521 2>&1)"
+  test "${A#usage: }" = "$A" || SSHARG_HKG="$SSHARG_HKG,ecdsa-sha2-nistp521,ecdsa-sha2-nistp384,ecdsa-sha2-nistp256"
+  for A in $("$SSHARG_CMD" -Q key 2>/dev/null || echo ssh-dss); do  # `-Q key' introduced in OpenSSH 6.3.
+    test "${A#sk-}" = "$A" || continue  # Security key.
+    test "${A#*-cert-}" = "$A" || continue  # Certificate.
+    test "${A#ecdsa-sha2-nistp[1-9]*}" = "$A" || continue  # Already above.
+    test "$A" = ssh-rsa && continue  # Already above.
+    test "$A" = ssh-ed25519 && continue  # Already above.
+    SSHARG_HKG="$SSHARG_HKG,$A"  # Example: ssh-dss (DSA), disabled at runtime in OpenSSH 7.0.
+  done
+
+  SSHARG_HKA=ptssh-hostkey  # Shouldn't matter, $SSHARG_UKHF won't be extended.
+  # To make `ptssh import myhost:' (with the colon) work, we could specify `-o Host="$H"'
+  # here, but OpenSSH 8.2. doesn't support it.
+  #
+  # It's important that we don't specify `-F /dev/null' here, because we
+  # want User, HostName, Port and IdentityFile (if any) to be read from
+  # ~/.ssh/config.
+  set -- $(H=echo; "$SSHARG_CMD" -o HostKeyAlias="$SSHARG_HKA" -o IdentityFile=/dev/null -o UserKnownHostsFile="$SSHARG_UKHF" $SSHARG_X11 \
+      -o Protocol=2 -o HostKeyAlgorithms="$SSHARG_HKG" -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
+      -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no -o ProxyCommand='sh -c "echo PTSSH_NHPR '\''.%h'\'' '\''.%p'\'' '\''.%r'\'' END_PTSSH_NHPR >&2"' "$@" 2>&1 |
+      while read A; do test "${A#PTSSH_NHPR }" != "$A" && $H "$A" && H=:; done) "$@"
+  if test "$1" != PTSSH_NHPR; then
+    echo "$0: fatal: querying hostname failed with ProxyCommand" >&2
+    exit 1
+  fi
+  if test "$5" != END_PTSSH_NHPR; then
+    echo "$0: fatal: found whitespace in hostname or other fields" >&2
+    exit 1
+  fi
+  if test "$2" = .; then
+    echo "$0: fatal: empty hostname" >&2
+    exit 1
+  fi
+  if test "$3" = .; then
+    echo "$0: fatal: empty port" >&2
+    exit 1
+  fi
+  if test "$4" = .; then
+    echo "$0: fatal: empty user" >&2
+    exit 1
+  fi
+  if test "$4" = '%r'; then  # OpenSSH 3.8.1 is too old, OpenSSH 6.6.1 is good.
+    echo "$0: fatal: ssh is too old to get user; try on a system with newer OpenSSH" >&2
+    exit 1
+  fi
+  if test "${2#.}" = "$2" || test "${3#.}" = "$3" || test "${4#.}" = "$4"; then
+    echo "$0: fatal: missing dots in ProxyCommand output fields." >&2
+    exit 1
+  fi
+  SSHARG_HOST="${2#.}"; SSHARG_PORT="${3#.}"; SSHARG_DUSER="${4#.}"
+  shift; shift; shift; shift; shift
+  unset CR
+  if test $'\052' = '*'; then
+    CR=$'\r'
+  else  # posh and dash
+    CR="$(awk 'BEGIN{printf"%c",13}' </dev/null)"
+  fi
+  if test -z "$CR"; then
+    echo "$0: fatal: cannot get CR byte" >&2
+    exit 1
+  fi
+  SSHARG_HKA=ptssh-hostkey-"$H"
+  if ! true >"$SSHARG_UKHF"; then
+    echo "$0: fatal: error clobbering: $SSHARG_UKHF" >&2
+    exit 1
+  fi
+  unset SSHARG_IDFARG
+  test "$SSHARG_HASUSERKEY" && SSHARG_IDFARG="-o IdentityFile=$SSHARG_CF"
+  set -- $(
+    # Explicit BatchMode=no to counteract ~/.ssh/config `BatchMode yes', and thus be able to ask for passphrase.
+    "$SSHARG_CMD" -v -o BatchMode=no -o HostKeyAlias="$SSHARG_HKA" $SSHARG_IDFARG -o UserKnownHostsFile="$SSHARG_UKHF" \
+        -o Protocol=2 -o HostKeyAlgorithms="$SSHARG_HKG" -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \
+        -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no "$@" true 2>&1 | (
+    unset UIF AUTH
+    AUTH=unknown; SSHARG_X11=-x
+    while read A; do
+      case "$A" in
+       debug1:\ Authentication\ succeeded\ \(publickey\)*) AUTH=ok ;;
+       debug1:\ Server\ accepts\ key:\ * | debug1:\ Trying\ private\ key:\ * | debug1:\ Offering\ public\ key:\ * | debug1:\ Offering\ *\ public\ key:\ *)
+        # We don't support whitespace in the key file name, because e.g. OpenSSH 8.2 appends some more words to the debug message.
+        A="${A%$CR}"; for H in ${A#*: *: }; do UIF="$H"; break; done ;;
+       debug1:\ Requesting\ X11\ forwarding*) SSHARG_X11=-X ;;
+       Permission\ denied\ \(* | *:\ Permission\ denied\ \(*) test "$AUTH" = unknown && AUTH=perm ;;
+       ssh*:\ Could\ not\ resolve\ hostname\ * | ssh*:\ Name\ or\ service\ not\ known) AUTH=dns ;;
+       ssh*:\ connect\ to\ host\ *) AUTH=connect ;;
+      esac
+    done
+    test "$AUTH" = ok && test -z "$UIF" && AUTH=nouif
+    test -z "$UIF" && UIF=unknown
+    echo "PTSSH_AUTH .$AUTH .$SSHARG_X11 .$UIF END_PTSSH_AUTH")) "$@"
+  if test "$1" != PTSSH_AUTH; then
+    echo "$0: fatal: querying SSH server connection failed " >&2
+    exit 1
+  fi
+  if test "$5" != END_PTSSH_AUTH; then
+    echo "$0: fatal: found whitespace in identity or other fields" >&2
+    exit 1
+  fi
+  if test "$2" = .; then
+    echo "$0: fatal: empty auth status" >&2
+    exit 1
+  fi
+  if test "$3" = .; then
+    echo "$0: fatal: empty X11 flag" >&2
+    exit 1
+  fi
+  if test "$4" = .; then
+    echo "$0: fatal: empty user identity" >&2
+    exit 1
+  fi
+  if test "$2" != .ok; then
+    echo "$0: fatal: error (${2#.}) connecting to SSH server: $H" >&2
+    exit 1
+  fi
+  SSHARG_X11="${3#.}"
+  SSHARG_IDF="${4#.}"
+  SSHARG_IDF="${SSHARG_IDF%.pub}"
+  SSHARG_H="$H"  # Could be comma-separated list of host specs.
+  shift; shift; shift; shift; shift
+  if ! test -f "$SSHARG_IDF"; then
+    echo "$0: fatal: missing user identity file: $SSHARG_IDF" >&2
+    exit 1
+  fi
+  if test "$SSHARG_HASUSERKEY" && test "$SSHARG_IDF" != "$SSHARG_CF"; then
+    echo "$0: fatal: expected user identity file use $SSHARG_CF, got: $SSHARG_IDF" >&2
+    exit 1
+  fi
+  if ! read A <"$SSHARG_IDF" 2>/dev/null; then
+    echo "$0: fatal: error reading identity file: $SSHARG_IDF" >&2
+    exit 1
+  fi
+  if test "${A#-----BEGIN }" = "$A"; then
+    echo "$0: fatal: expected user identity private key in identity file: $SSHARG_IDF" >&2
+    exit 1
+  fi
+  if ! read SSHARG_HKA SSHARG_HKG SSHARG_HOSTKEY SSHARG_REST <"$SSHARG_UKHF" 2>/dev/null; then
+    echo "$0: fatal: error reading tmp hostkey file: $SSHARG_UKHF" >&2
+    exit 1
+  fi
+  if test -z "$SSHARG_HOSTKEY"; then
+    echo "$0: fatal: not enough data in tmp hostkey file: $SSHARG_UKHF" >&2
+    exit 1
+  fi
+  if test "$SSHARG_HKA" != ptssh-hostkey-"$H"; then
+    echo "$0: fatal: expected hostkey in tmp hostkey file: $SSHARG_UKHF" >&2
+    exit 1
+  fi
+  if test "$SSHARG_HASUSERKEY"; then  # Just speedup.
+    if ! echo "$SSHARG_HKA $SSHARG_HKG $SSHARG_HOSTKEY $SSHARG_DUSER $SSHARG_PORT $SSHARG_HOST $SSHARG_X11 $SSHARG_H" >>"$SSHARG_CF"; then
+      echo "$0: fatal: error appending to config file: $SSHARG_CF" >&2
+      exit 1
+    fi
+  else
+    A="$(while read A; do echo "$A"; done <"$SSHARG_IDF"; echo "$SSHARG_HKA $SSHARG_HKG $SSHARG_HOSTKEY $SSHARG_DUSER $SSHARG_PORT $SSHARG_HOST $SSHARG_X11 $SSHARG_H")"
+    if ! echo "$A" >"$SSHARG_CF"; then
+      echo "$0: fatal: error writing to config file: $SSHARG_CF" >&2
+      exit 1
+    fi
+  fi
+  rm -f "$SSHARG_UKHF"  # In case the trap ... EXIT above has failed.
+  if test "$SSHARG_HASUSERKEY"; then
+    echo "$0: info: host $H added to config file: $SSHARG_CF" >&2
+  else
+    echo "$0: info: config file created and host $H added: $SSHARG_CF" >&2
+  fi
+  exit
+fi  # import.
+
 if test -z "$SSHARG_HASUSERKEY"; then
-  echo "$0: fatal: ssh user identity data missing from config file: $SSHARG_IDF" >&2
+  echo "$0: fatal: ssh user identity data missing from config file: $SSHARG_CF" >&2
   exit 1
 fi
 if test -z "$SSHARG_HASHOST"; then
   # TODO(pts): Read host config from "$HOME/.ptssh", while reading the user
   # identity from `-i ...'.
-  echo "$0: fatal: ssh server hosts missing from config file: $SSHARG_IDF" >&2
+  echo "$0: fatal: ssh server hosts missing from config file: $SSHARG_CF" >&2
   exit 1
 fi
 if test -z "$SSHARG_H"; then
@@ -226,11 +484,10 @@ for H in $A; do
     exit 1
   fi
 done
-
 # TODO(pts): Optionally, start a new ssh-agent if available, and enable agent
 # forwarding. Also, optionally, use the existing ssh-agent, and add the key.
-SSH_AUTH_SOCK=  # Disable usage of ssh-agent.
-export SSH_AUTH_SOCK
+unset SSH_AUTH_SOCK SSH_AUTH_SOCK_FAST  # Disable usage of ssh-agent.
+test "${SSHARG_IDF#-}" = "$SSHARG_IDF" || SSHARG_IDF="./$SSHARG_IDF"
 # No way to disable this check on the private key (-i):
 # https://github.com/openssh/openssh-portable/blob/4fa9e048c2af26beb7dc2ee9479ff3323e92a7b5/authfile.c#L104-L113
 chmod go-rwx "$SSHARG_IDF" || exit 2
