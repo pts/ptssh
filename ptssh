@@ -385,18 +385,18 @@ if test "$SSHARG_MODE" = import; then
   fi
   unset SSHARG_IDFARG
   test "$SSHARG_HASUSERKEY" && SSHARG_IDFARG="-o IdentityFile=$SSHARG_CF"
+  # Explicit BatchMode=no to counteract ~/.ssh/config `BatchMode yes', and thus be able to ask for passphrase.
   set -- $(
-    # Explicit BatchMode=no to counteract ~/.ssh/config `BatchMode yes', and thus be able to ask for passphrase.
     "$SSHARG_CMD" -v -o BatchMode=no -o HostKeyAlias="$SSHARG_HKA" $SSHARG_IDFARG -o UserKnownHostsFile="$SSHARG_UKHF" \
         -o Protocol=2 -o HostKeyAlgorithms="$SSHARG_HKG" -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \
         -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no -o KbdInteractiveAuthentication=no "$@" true 2>&1 | (
     unset UIF AUTH
     AUTH=unknown; SSHARG_X11=-x
     while read A; do
-      case "$A" in
+      case "$A" in #(((((( Parentheses balance workaround for posh 0.13.2.
        debug1:\ Authentication\ succeeded\ \(publickey\)*) AUTH=ok ;;
        debug1:\ Server\ accepts\ key:\ * | debug1:\ Trying\ private\ key:\ * | debug1:\ Offering\ public\ key:\ * | debug1:\ Offering\ *\ public\ key:\ *)
-        # We don't support whitespace in the key file name, because e.g. OpenSSH 8.2 appends some more words to the debug message.
+        # We do not support whitespace in the key file name, because e.g. OpenSSH 8.2 appends some more words to the debug message.
         A="${A%$CR}"; for H in ${A#*: *: }; do UIF="$H"; break; done ;;
        debug1:\ Requesting\ X11\ forwarding*) SSHARG_X11=-X ;;
        Permission\ denied\ \(* | *:\ Permission\ denied\ \(*) test "$AUTH" = unknown && AUTH=perm ;;
