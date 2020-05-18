@@ -52,6 +52,8 @@
 # for group and other there.
 #
 # TODO(pts): Add embed tool for merging the config file ~/.ptssh to ptssh.
+# `-----BEGIN OPENSSH PRIVATE KEY-----' works only in the beginning. Also
+# add the confidentiality disclaimer and chmod the output.
 #
 if test $# = 0 || test "$1" = --help; then
   test $# = 0 && exec >&2
@@ -192,7 +194,17 @@ if test "$SSHARG_MODE" = import; then
     echo "$0: fatal: no \$HOME directory set, needed for import" >&2
     exit 1
   fi
-  SSHARG_CF="$HOME/.ptssh"  # Ignore $SSHARG_IDF (`-i ...').
+  SSHARG_CF=
+  if test -f "$0"; then  # Use the script as config file if hostkey or userkey present.
+    SSHARG_HASHOST= SSHARG_HASUSERKEY=
+    while read SSHARG_HKA SSHARG_HKG SSHARG_HOSTKEY SSHARG_DUSER SSHARG_PORT SSHARG_HOST SSHARG_X11 SSHARG_H SSHARG_REST; do
+      test "$SSHARG_H" && test "${SSHARG_HKA#ptssh-hostkey-}" != "$SSHARG_HKA" && SSHARG_HASHOST=1
+      test "$SSHARG_HKA" = -----BEGIN && SSHARG_HASUSERKEY=1
+    done <"$0"
+    test "$SSHARG_HASHOST" && SSHARG_CF="$0"
+    test "$SSHARG_HASUSERKEY" && SSHARG_CF="$0"
+  fi
+  test "$SSHARG_CF" || SSHARG_CF="$HOME/.ptssh"  # Ignore $SSHARG_IDF (`-i ...').
   test "${SSHARG_CF#-}" = "$SSHARG_CF" || SSHARG_CF="./$SSHARG_CF"
   if ! : >>"$SSHARG_CF"; then
     echo "$0: error opening config file for write: $SSHARG_CF" >&2
@@ -203,11 +215,35 @@ if test "$SSHARG_MODE" = import; then
     exit 1
   fi
 else
-  test -z "$SSHARG_IDF" && test -d "$HOME" && SSHARG_IDF="$HOME/.ptssh"  # !! Support multiple read locations.
-  SSHARG_CF="$SSHARG_IDF"
-  if ! test -f "$SSHARG_CF"; then
-    echo "$0: fatal: missing config file: $SSHARG_CF" >&2
-    exit 1
+  SSHARG_CF=
+  if test "$SSHARG_IDF"; then
+    if ! test -f "$SSHARG_IDF"; then
+      echo "$0: fatal: missing user identity file: $SSHARG_IDF" >&2
+      exit 1
+    fi
+    SSHARG_HASHOST=
+    while read SSHARG_HKA SSHARG_HKG SSHARG_HOSTKEY SSHARG_DUSER SSHARG_PORT SSHARG_HOST SSHARG_X11 SSHARG_H SSHARG_REST; do
+      test "$SSHARG_H" && test "${SSHARG_HKA#ptssh-hostkey-}" != "$SSHARG_HKA" && SSHARG_HASHOST=1 && break
+    done <"$SSHARG_IDF"
+    test "$SSHARG_HASHOST" && SSHARG_CF="$SSHARG_IDF"
+  fi
+  if test -z "$SSHARG_CF" && test -f "$0"; then
+    SSHARG_HASHOST=
+    while read SSHARG_HKA SSHARG_HKG SSHARG_HOSTKEY SSHARG_DUSER SSHARG_PORT SSHARG_HOST SSHARG_X11 SSHARG_H SSHARG_REST; do
+      test "$SSHARG_H" && test "${SSHARG_HKA#ptssh-hostkey-}" != "$SSHARG_HKA" && SSHARG_HASHOST=1 && break
+    done <"$0"
+    test "$SSHARG_HASHOST" && SSHARG_CF="$0"
+  fi
+  if test -z "$SSHARG_CF"; then
+    if test -z "$HOME"; then
+      echo "$0: fatal: no \$HOME directory set, needed for import" >&2
+      exit 1
+    fi
+    SSHARG_CF="$HOME/.ptssh"
+    if ! test -f "$SSHARG_CF"; then
+      echo "$0: fatal: missing config file: $SSHARG_CF" >&2
+      exit 1
+    fi
   fi
 fi
 
@@ -216,8 +252,10 @@ SSHARG_HASUSERKEY=; SSHARG_HASHOST=; SSHARG_H=
 while read SSHARG_HKA SSHARG_HKG SSHARG_HOSTKEY SSHARG_DUSER SSHARG_PORT SSHARG_HOST SSHARG_X11 SSHARG_H SSHARG_REST; do
   SSHARG_HASANY=1
   test "$SSHARG_HKA" = -----BEGIN && SSHARG_H= && SSHARG_HASUSERKEY=1 && continue
-  test -z "$SSHARG_H" && continue
-  test "${SSHARG_HKG#ssh-}" = "$SSHARG_HKG" && test "${SSHARG_HKG#ecdsa-}" = "$SSHARG_HKG" && SSHARG_H= && continue
+  test "$SSHARG_H" || continue
+  test "${SSHARG_HKA#ptssh-hostkey-}" = "$SSHARG_HKA" && SSHARG_H= && continue
+  # Don't be too strict, don't check:
+  # test "${SSHARG_HKG#ssh-}" = "$SSHARG_HKG" && test "${SSHARG_HKG#ecdsa-}" = "$SSHARG_HKG" && SSHARG_H= && continue
   SSHARG_HASHOST=1
   SSHARG_H=",$SSHARG_H,"
   if test "${SSHARG_H#*,$H,}" != "$SSHARG_H"; then
@@ -410,7 +448,7 @@ if test "$SSHARG_MODE" = import; then
     echo "$0: fatal: error reading identity file: $SSHARG_IDF" >&2
     exit 1
   fi
-  if test "${A#-----BEGIN }" = "$A"; then
+  if test -z "$SSHARG_HASUSERKEY" && test "${A#-----BEGIN }" = "$A"; then
     echo "$0: fatal: expected user identity private key in identity file: $SSHARG_IDF" >&2
     exit 1
   fi
@@ -447,9 +485,12 @@ if test "$SSHARG_MODE" = import; then
   exit
 fi  # import.
 
-if test -z "$SSHARG_HASUSERKEY"; then
-  echo "$0: fatal: ssh user identity data missing from config file: $SSHARG_CF" >&2
-  exit 1
+if test -z "$SSHARG_IDF"; then
+  if test -z "$SSHARG_HASUSERKEY"; then
+    echo "$0: fatal: ssh user identity data missing from config file: $SSHARG_CF" >&2
+    exit 1
+  fi
+  SSHARG_IDF="$SSHARG_CF"
 fi
 if test -z "$SSHARG_HASHOST"; then
   # TODO(pts): Read host config from "$HOME/.ptssh", while reading the user
@@ -458,7 +499,11 @@ if test -z "$SSHARG_HASHOST"; then
   exit 1
 fi
 if test -z "$SSHARG_H"; then
-  echo "$0: fatal: unknown <hostname>: $H" >&2
+  if test "$SSHARG_CF" = "$0"; then
+    echo "$0: fatal: unknown <hostname>: $H" >&2
+  else
+    echo "$0: fatal: unknown <hostname> in config file $SSHARG_CF: $H" >&2
+  fi
   exit 1
 fi
 test "$SSHARG_USER" || SSHARG_USER="$SSHARG_DUSER"
@@ -473,7 +518,7 @@ elif test "$SSHARG_X11" = -Y; then  # Even OpenSSH 3.8.1 supports this.
 else
   SSHARG_X11="-o ForwardX11=no"
 fi
-SSHARG_UKHF="$SSHARG_IDF"
+SSHARG_UKHF="$SSHARG_CF"
 
 A=",$SSHARG_USER,$SSHARG_HKA,$SSHARG_HOST,$SSHARG_PORT,$SSHARG_IDF,$SSHARG_UKHF,$SSHARG_HKG,"
 for H in $A; do
@@ -518,3 +563,4 @@ fi
 exec "$SSHARG_CMD" -F /dev/null -o User="$SSHARG_USER" -o HostKeyAlias="$SSHARG_HKA" -o HostName="$SSHARG_HOST" -o Port="$SSHARG_PORT" -o IdentityFile="$SSHARG_IDF" -o UserKnownHostsFile="$SSHARG_UKHF" $SSHARG_X11 \
     -o Protocol=2 -o HostKeyAlgorithms="$SSHARG_HKG" -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
     -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no -o KbdInteractiveAuthentication=no "$@"
+exit 1  # Don't add any more code, so that a config file can be appended (SSHARG_CF="$0").
