@@ -40,8 +40,8 @@ Design goals of ptssh (all met):
 * It should ignore the ssh-agent(1). This is also part of portability.
 * It should be easy to embed the config into the ptssh script, thus
   copying one file to the target system should be enough.
-* It shouldn't attempt to run any command (other than ssh, scp, sftp and
-  rsync) which isn't a shell builtin.
+* It shouldn't attempt to run any command (other than ssh, scp, sftp, rsync
+  and chmod) which isn't a shell builtin.
 
 It's possible to embed the config into the ptssh script by just
 concatenating them:
