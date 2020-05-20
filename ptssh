@@ -20,9 +20,7 @@
 # if the user identity (private key) is the same; in this case subsequent
 # imported server specifications will be appended to the config file
 # ~/.ptssh. A sample config file is also provided in the file
-# `config.ptssh.sample'.
-#
-# TODO(pts): Write a detailed tutorial on creating the config file.
+# `config.ptssh.sample'. (See details below.)
 #
 # It's possible to embed the config into the ptssh script by just
 # concatenating them:
@@ -137,6 +135,54 @@
 # ptssh can't run from a FAT filesystem (or other non-Unix filesystems),
 # because `chmod' below isn't able to remove rwx permissions for group and
 # other there. This can be a problem if it's run from USB pen drives.
+#
+# The format of the config file ~/.ptssh is the following:
+#
+# * (Most users don't need to care about these details, because they have
+#   created the config file with `./ptssh import ...'.)
+# * A line of the form `-----BEGIN ... PRIVATE KEY-----' (including
+#   `-----BEGIN PRIVATE KEY-----') indicating the
+#   beginning of the user identity (private key). Any format (`...')
+#   supported by OpenSSH works. It can be protected (encrypted with a
+#   passphrase) or unprotected. Any key algorithm supported by OpenSSH (e.g.
+#   ssh-rsa, ssh-dss, ssh-ed25519) works.
+# * Optional `Key: value' lines if it's an encrypted traditional OpenSSL RSA
+#   or DSA private key. Example key: `Proc-Type' and `DEK-Info'.
+# * Base64-encoded private key material.
+# * A line of the form `-----END ... PRIVATE KEY-----'.
+# * Comment lines and server specification lines. At least 1 server
+#   specification line. Each line which doesn't start with `ptssh-hostkey-'
+#   is a comment line.
+# * A server specification line is a whitespace-separated (can be space, tab
+#   or combination) of these items:
+#   * `ptssh-hostkey-ID'. `ID' is an arbitrary unique ID within the file.
+#   * hostkey algorithm. Examples: ssh-rsa, ssh-dss, ssh-ed25519,
+#     ecdsa-sha2-nistp521, ecdsa-sha2-nistp384, ecdsa-sha2-nistp256.
+#   * hostkey public key, Base64-encoded. Starts with `AAAA'.
+#   * server username.
+#   * server port number. The default, 22, also has to be specified.
+#   * server hostname (or IP address).
+#   * X11 forwaring specification. One of: -x (disabled), -X (enabled,
+#     untrusted), -Y (enabled, trusted). If you don't want to run GUI programs
+#     on the server over the SSH connection, specify `-x'.
+#   * host aliases. Comma-separated list of aliases (`Host' lines in
+#     ~/.ssh/config) ptssh should recognize in the command-line. By default,
+#     there is only 1 alias: `ID' above.
+#
+# The config file format was designed with the following requirements:
+#
+# * It should be a structured text file which is easy to generate and parse
+#   from shell scripts.
+# * It should be easy to edit manually, including the copy-pasting of keys
+#   from other files. However, manual config file editing is only an expert
+#   use case: for most uses the config file created by tools ptssh and
+# * ptssh-keycat should be sufficient.
+# * It can be used for `ssh -o IdentityFile=...' (and `ssh -i ...') without
+#   modification, thus it should start with a private key understood by
+#   OpenSSH, thus starting with `-----BEGIN ... PRIVATE KEY-----'.
+# * It can be used for `ssh -o UserKnownHostsFile=...' without modification.
+#   This isn't an important restriction, because ssh(1) ignores any lines
+#   not starting with with `...' specified in `ssh -o HostKeyAlias=...'.
 #
 if test $# = 0 || test "$1" = --help; then
   test $# = 0 && exec >&2
