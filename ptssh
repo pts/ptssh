@@ -473,6 +473,7 @@ if test "$SSHARG_MODE" = import; then
     while read A; do
       case "$A" in #(((((( Parentheses balance workaround for posh 0.13.2.
        debug1:\ Authentication\ succeeded\ \(publickey\)*) AUTH=ok ;;
+       debug1:\ Server\ accepts\ key:\ pkalg\ *) ;;
        debug1:\ Server\ accepts\ key:\ * | debug1:\ Trying\ private\ key:\ * | debug1:\ Offering\ public\ key:\ * | debug1:\ Offering\ *\ public\ key:\ *)
         # We do not support whitespace in the key file name, because e.g. OpenSSH 8.2 appends some more words to the debug message.
         A="${A%$CR}"; for H in ${A#*: *: }; do UIF="$H"; break; done ;;
@@ -480,6 +481,7 @@ if test "$SSHARG_MODE" = import; then
        Permission\ denied\ \(* | *:\ Permission\ denied\ \(*) test "$AUTH" = unknown && AUTH=perm ;;
        ssh*:\ Could\ not\ resolve\ hostname\ * | ssh*:\ Name\ or\ service\ not\ known) AUTH=dns ;;
        ssh*:\ connect\ to\ host\ *) AUTH=connect ;;
+       no\ such\ identity:\ *) AUTH=nosuchui ;;
       esac
     done
     test "$AUTH" = ok && test -z "$UIF" && AUTH=nouif
