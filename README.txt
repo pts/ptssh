@@ -1,27 +1,47 @@
 ptssh: portable SSH client for Unix
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-ptssh is a portable SSH client (with support for ssh, scp, sftp and rsync)
-for Unix with a focus on portability: it has a single config file (and it
-ignores ~/.ssh/*), and it works equivalently on any Unix system and any
-OpenSSH version. After configuration, it can be used as a fallback to
-connect if ssh(1) stops working because of a software upgrade or a
-configuration change. It can also be used on public computers or loaners
-where reading and writing OpenSSH config files is not desired. ptssh is
-implemented as a Bourne shell script calling OpenSSH ssh(1) with custom
-options. The config file can be embedded to the ptssh script and the
-merged standalone script can be copied to a pen drive and used on another
-computer (running Unix and having OpenSSH installed).
+ptssh is and SSH client (with support for ssh, scp, sftp and rsync) for
+Unix with a focus on portability and single-file configs: it has a single
+config file (and it ignores ~/.ssh/*), and it works equivalently on any
+Unix system and any OpenSSH version. After configuration, it can be used
+as a fallback to connect if ssh(1) stops working because of a software
+upgrade or a configuration change. It can also be used on public computers
+or loaners where reading and writing OpenSSH config files is not desired.
+ptssh is implemented as a Bourne shell script calling OpenSSH ssh(1) with
+custom options. The config file can be embedded to the ptssh script and
+the merged standalone script can be copied to a pen drive and used on
+another computer (running Unix and having OpenSSH installed).
 
 To start using ptssh, you need to create the config file ~/.ptssh first.
 This config file contains the user identity (private key), and for each
 server the server hostkey, server connection information (hostname, port,
 username) and server X11 forwarding config. The easiest way to create a
 config file is importing from ssh(1), e.g. `./ptssh import myserver1' and
-`./ptssh import myuser@myserver2'. It possible to import mupltiple times
+`./ptssh import myuser@myserver2'. It possible to import multiple times
 if the user identity (private key) is the same; in this case subsequent
 imported server specifications will be appended to the config file
 ~/.ptssh. A sample config file is also provided in the file
 `config.ptssh.sample'. (See details below.)
+
+Design goals of ptssh (all met):
+
+* It should work with old and new versions of OpenSSH. More specifically,
+  OpenSSH 3.9 (released on 2004-08-18) or later, and
+  Debian Etch (released on 2007-04-08) or later should work.
+* It should work with many Bourne shells.
+* The ptssh-keycat tool should work with old and new versions of Perl 5.
+  More specifically, Perl 5.6.1 (released on 2001-04-08) or later should
+  work.
+* It should ignore OpenSSH system config files in /etc/ssh/* .
+* It should ignore OpenSSH user config files in ~/.ssh/* . The reason for
+  this is portability to other systems: by copying the ptssh shell script
+  and the config file ~/.ptssh, it should work equivalently on the target
+  system.
+* It should ignore the ssh-agent(1). This is also part of portability.
+* It should be easy to embed the config into the ptssh script, thus
+  copying one file to the target system should be enough.
+* It shouldn't attempt to run any command (other than ssh, scp, sftp and
+  rsync) which isn't a shell builtin.
 
 It's possible to embed the config into the ptssh script by just
 concatenating them:

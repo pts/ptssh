@@ -3,17 +3,17 @@
 # ptssh: portable SSH client for Unix
 # by pts@fazekas.hu at Mon May 11 18:25:34 CEST 2020
 #
-# ptssh is a portable SSH client (with support for ssh, scp, sftp and rsync)
-# for Unix with a focus on portability: it has a single config file (and it
-# ignores ~/.ssh/*), and it works equivalently on any Unix system and any
-# OpenSSH version. After configuration, it can be used as a fallback to
-# connect if ssh(1) stops working because of a software upgrade or a
-# configuration change. It can also be used on public computers or loaners
-# where reading and writing OpenSSH config files is not desired. ptssh is
-# implemented as a Bourne shell script calling OpenSSH ssh(1) with custom
-# options. The config file can be embedded to the ptssh script and the
-# merged standalone script can be copied to a pen drive and used on another
-# computer (running Unix and having OpenSSH installed).
+# ptssh is and SSH client (with support for ssh, scp, sftp and rsync) for
+# Unix with a focus on portability and single-file configs: it has a single
+# config file (and it ignores ~/.ssh/*), and it works equivalently on any
+# Unix system and any OpenSSH version. After configuration, it can be used
+# as a fallback to connect if ssh(1) stops working because of a software
+# upgrade or a configuration change. It can also be used on public computers
+# or loaners where reading and writing OpenSSH config files is not desired.
+# ptssh is implemented as a Bourne shell script calling OpenSSH ssh(1) with
+# custom options. The config file can be embedded to the ptssh script and
+# the merged standalone script can be copied to a pen drive and used on
+# another computer (running Unix and having OpenSSH installed).
 #
 # See details and instructions on https://github.com/pts/ptssh
 #
