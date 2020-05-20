@@ -101,8 +101,8 @@ sub biguint_mod($$) {
 
 die unless unpack("H*", biguint_mod("\x01\x23\x45", "\x7b")) eq "1b";
 
-sub filter_through_cmd_infile($$) {
-  my($cmd, $s) = @_;
+sub filter_through_cmd_infile($$;$) {
+  my($cmd, $s, $do_ignore_error) = @_;
   my $dfn;
   eval {
     my $fn = "sshkeyconv.$$.tmp";
@@ -123,7 +123,11 @@ sub filter_through_cmd_infile($$) {
     # The output of this is compatible with OpenSSH 3.8.1 on Debian Sarge.
     die "$0: fatal: popen failed for: $cmd\n" if !open($f, "$cmd $fnq|");
     $s = join("", <$f>);
-    die "$0: fatal: popen close failed for: $cmd\n" if !close($f) or $? or !length($s);
+    if ($do_ignore_error) {
+      $s = undef if !close($f) or $?;
+    } else {
+      die "$0: fatal: popen close failed for: $cmd\n" if !close($f) or $? or !length($s);
+    }
   };
   unlink($dfn) if defined($dfn);  # TODO(pts): Delete even on SIGINT (use sigtrap).
   die $@ if $@;
@@ -354,6 +358,52 @@ sub is_protection_strong($) {
   $iter_count >= $min_strong_iter_count
 }
 
+sub convert_pkcs8_dsa_der_to_traditional_pem($;$) {
+  my($k, $kder) = @_;
+  die "$0: fatal: expected unprotected PKCS#8 private key\n" if $k !~ m@\A-----BEGIN PRIVATE KEY-----\n(.*)\n-----END PRIVATE KEY-----\n@s;
+  $k = filter_through_cmd_infile("openssl dsa -in 2>/dev/null", $k, 1);  # openssl is faster than Math::BigInt->bmodpow.
+  return $k if defined $k;
+  # If openssl is not available, we do a fallback with Math::BigInt->bmodpow
+  # (which is much slower).
+  my $kb = defined($kder) ? undef : $1;
+  $k = $_[0];
+  eval { require Math::BigInt };
+  if ($@) {
+    print STDERR "$0: warning: cannot convert DSA key to traditional, both openssl and Math::BigInt are missing\n";
+    return $k;
+  }
+  $kder = base64_decode($kb) if !defined($kder);
+  pos($kder) = 0;
+  # Poor man's ASN.1 DER parser.
+  die "$0: fatal: expected unprotected PKCS#8 DSA private key DER\n" if
+      $kder !~ m@\G\x30(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....)\x02\x01\x00\x30(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....)\x06\x07\x2a\x86\x48\xce\x38\x04\x01\x30(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....)@sg;
+  require Math::BigInt;
+  my(%h, %dh);
+  for my $na (qw(p q g x)) {
+    die "$0: fatal: expected octet bytes for DSA field $na\n" if
+        $na eq 'x' and $kder !~ m@\G\x04(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....)@sg;
+    my $start_ofs = pos($kder);
+    die "$0: fatal: expected uint for DSA field $na\n" if
+        $kder !~ m@\G\x02([\0-\x7f]|\x81.|\x82..|\x83...|\x84....)(?=[\0-\x7f])@sg;
+    my $b = vec($1, 0, 8);
+    my $size = $b < 0x80 ? $b : $b == 0x81 ? vec($1, 1, 8) : $b == 0x82 ? vec($1, 1, 8) << 8 | vec($1, 2, 8) : $b == 0x83 ? vec($1, 1, 8) << 16 | vec($1, 1, 16) : unpack("N", substr($1, 1));
+    die "$0: fatal: EOF in DSA field $na\n" if pos($kder) + $size > length($kder);
+    $h{$na} = Math::BigInt->from_hex('0x' . unpack("H*", substr($kder, pos($kder), $size))) if $na eq 'g' or $na eq 'x' or $na eq 'p';
+    pos($kder) += $size;
+    $dh{$na} = substr($kder, $start_ofs, pos($kder) - $start_ofs);
+  }
+  $h{'y'} = $h{g}->copy()->bmodpow($h{x}, $h{p});
+  {
+    my $dy = $h{'y'}->as_hex();
+    substr($dy, 2, 0) = "0" if length($dy) & 1;
+    $dy =~ s@\A0x(?=([89a-f]?))@ "00" x length($1) @e;
+    $dh{'y'} = der_field(2, pack("H*", $dy));
+  }
+  $dh{'Z'} = "\x02\x01\x00";  # Zero.
+  $k = base64_encode(der_field(0x30, join('', @dh{qw(Z p q g y x)})));
+  "-----BEGIN DSA PRIVATE KEY-----\n$k-----END DSA PRIVATE KEY-----\n"
+}
+
 # --- main().
 
 if (!@ARGV or $ARGV[0] eq '--help') {
@@ -446,17 +496,16 @@ while (<>) {
       $k = filter_through_cmd_infile($cmd, $k);
       die "$0: fatal: expected unprotected private key from: $cmd\n" if not (
           $k =~ m@\A(-----BEGIN (RSA |DSA |)PRIVATE KEY-----\n(.*)\n-----END \2PRIVATE KEY-----\n)@s and (length($2) == 0 or length($outkeytype) == 0 or $2 eq $outkeytype));
-      if (length($2) == 0) {
+      if (length($2) == 0) {  # !! Do this conversion even for '-----BEGIN PRIVATE KEY-----'.
         my $kder = base64_decode($3);
         # Poor man's ASN.1 DER parser, including OID for rsaEncryption and dsaEncryption.
-        if ($kder =~ m@\A\x30(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....)\x02\x01\x00\x30(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....)\x06(\x09\x2a\x86\x48\x86\xf7\x0d\x01\x01\x01\x05\x00\x04(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....)(.*)|\x07\x2a\x86\x48\xce\x38\x04\x01)@s) {
+        if ($kder =~ m@\A\x30(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....)\x02\x01\x00\x30(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....)\x06(\x09\x2a\x86\x48\x86\xf7\x0d\x01\x01\x01\x05\x00\x04(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....(.*))|\x07\x2a\x86\x48\xce\x38\x04\x01\x30(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....))@s) {
           my $keytype2 = substr($1, 0, 1) eq "\x09" ? 'rsa' : 'dsa';
           if ($keytype2 eq 'rsa') {
             $k = base64_encode($2);
             $k = "-----BEGIN RSA PRIVATE KEY-----\n$k-----END RSA PRIVATE KEY-----\n";
           } elsif ($keytype2 eq 'dsa') {
-            # It's not just a field copy, 2 biguints need to be computed for DSA.
-            $k = filter_through_cmd_infile("openssl dsa -in", $k);
+            $k = convert_pkcs8_dsa_der_to_traditional_pem($k, $kder);
           }
         }
       }
