@@ -1,0 +1,468 @@
+#! /bin/sh --
+exec perl -w -x -- "$0" "$@"; exit 1
+#! perl -w
+# by pts@fazekas.hu at Tue May 19 00:22:20 CEST 2020
+use integer;
+use strict;
+
+sub der_field($$) {
+  my($xtype, $size) = ($_[0], length($_[1]));
+  return pack("CC", $xtype, $size) . $_[1] if $size < 0x80;
+  return pack("CCC", $xtype, 0x81, $size) . $_[1] if $size <= 0xff;
+  return pack("CCn", $xtype, 0x82, $size) . $_[1] if $size <= 0xffff;
+  return pack("CCnC", $xtype, 0x83, $size >> 8, $size & 0xff) . $_[1] if $size <= 0xffffff;
+  return pack("CCN", $xtype, 0x84, $size) . $_[1] if not $size >> 32;
+  die "$0: fatal: der field too long\n";
+}
+
+# Returns $_[0] % $_[1], where the inputs and the result are biguints. A
+# biguint is a string containing big endian base 256 unsigned integer, and
+# its first byte must be less than \x80.
+#
+# This implementation is about 1.455 times slower than using the slowest
+# Math::BigInt (i.e. Math::BigInt::Calc), but it's much shorter.
+#
+# biguint_mod0: 0.440s user
+# this with 8 bits: 2.068s user, about 4.7 times slower.
+# this with 16 bits: 1.080s user, about 2.455 times slower.
+# this with 24 bits: impossible, vec($..., ..., 24) doesn't work.
+# this with 32 bits, 32-bit Perl: 0.824s user, about 1.873 times slower.
+# this with 32 bits, 64-bit Perl: 0.640s user, about 1.455 times slower.
+sub biguint_mod($$) {
+  use integer;
+  my $isperl32 = (1 << 30 << 3) == 0;
+  my($a, $b) = @_;
+  $a =~ s@\A\0+@@;
+  $b =~ s@\A\0+@@;
+  substr($a, 0, 0) = "\0" x (4 - (length($a) & 3)) if length($a) & 3;
+  substr($b, 0, 0) = "\0" x (4 - (length($b) & 3)) if length($b) & 3;
+  my($sa, $sb) = (length($a), length($b));
+  die "$0: fatal: modulo by 0\n" if !$b;
+  # We could do a shortcut if $b is a small power of 2, but our production
+  # inputs are not like that, so we don't bother.
+  if ($sa >= $sb and ($sa > $sb or $a ge $b)) {
+    my @cs = ("\0\0\0\0$b");
+    while (@cs < 32) {  # Double and save $b 7 times.
+      my $c = $cs[-1];
+      my $i = length($c) >> 2;
+      my $y = 0;  # Carry.
+      if ($isperl32) {
+        $i <<= 1;
+        while ($i--) {
+          $y |= vec($c, $i, 16) << 1;
+          vec($c, $i, 16) = $y;
+          $y >>= 16;
+        }
+      } else {
+        while ($i--) {  # $c *= 2;
+          $y |= vec($c, $i, 32) << 1;
+          vec($c, $i, 32) = $y;
+          $y >>= 32;
+        }
+      }
+      die "$0: fatal: leftover carry after doubling\n" if $y;
+      push @cs, $c;
+    }
+    push @cs, $b;
+    while (1) {
+      $sa = length($a);
+      last if $sa < $sb or ($sa == $sb and $a lt $b);
+      my $k = @cs;
+      while ($k--) {
+        my $c = $cs[$k];  # Not copied (until modified).
+        if ($sa >= length($c) and $a ge $c) {
+          my $i = length($c) >> 2;
+          my $y = 0;  # Carry: 0 or 256.
+          if ($isperl32) {
+            $i <<= 1;
+            while ($i--) {
+              $y = vec($a, $i, 16) - vec($c, $i, 16) - $y;
+              vec($a, $i, 16) = $y;
+              $y = ($y >> 16) & 1;
+            }
+          } else {
+            while ($i--) {  # $a -= $c;
+              $y = vec($a, $i, 32) - vec($c, $i, 32) - $y;
+              vec($a, $i, 32) = $y;
+              $y = ($y >> 32) & 1;
+            }
+          }
+          die "$0: fatal: leftover carry after subtraction\n" if $y;
+          $a =~ s@\A(?:\0\0\0\0)+@@;
+          last
+        }
+        die "$0: fatal: no value to subtract\n" if !$k;
+      }
+    }
+  }
+  $a =~ s@\A\0*@ "\0" x (!length($a) or vec($a, 0, 8) > 127) @e;
+  $a
+}
+
+die unless unpack("H*", biguint_mod("\x01\x23\x45", "\x7b")) eq "1b";
+
+sub filter_through_cmd_infile($$) {
+  my($cmd, $s) = @_;
+  my $dfn;
+  eval {
+    my $fn = "sshkeyconv.$$.tmp";
+    my $f;
+    die "$0: fatal: error opening file for writing: $fn: $!\n" if !open($f, '>',  $fn);
+    $dfn = $fn;
+    die "$0: fatal: error chmodding file: $fn: $!\n" if !chmod(0600, $fn);
+    die "$0: fatal: error writing to file: $fn: $!\n" if (syswrite($f, $s, length($s)) or 0) != length($s);
+    die "$0: fatal: error closing file: $fn: $!\n" if !close($f);
+    my $fnq = $fn;
+    if ($^O =~ m@win32@i) {
+      $fnq =~ s@'@'\\''@g;
+      $fnq = "'$fnq'";
+    } else {
+      $fnq =~ s@"@""@g;  # TODO(pts): Check this.
+      $fnq = "\"$fnq\"";
+    }
+    # The output of this is compatible with OpenSSH 3.8.1 on Debian Sarge.
+    die "$0: fatal: popen failed for: $cmd\n" if !open($f, "$cmd $fnq|");
+    $s = join("", <$f>);
+    die "$0: fatal: popen close failed for: $cmd\n" if !close($f) or $? or !length($s);
+  };
+  unlink($dfn) if defined($dfn);  # TODO(pts): Delete even on SIGINT (use sigtrap).
+  die $@ if $@;
+  $s
+}
+
+sub base64_decode($) {
+  my $k = $_[0];
+  $k =~ s@\s+@@g;
+  die "$0: fatal: bad base64 byte (" . sprintf("%02x", ord($1)). ")\n" if $k =~ m@([^A-Za-z0-9+/=])@;
+  die "$0: fatal: bad base64 size\n" if length($k) & 3;
+  my $size = (length($k) >> 2) * 3;
+  $k =~ s@(={1,3})\Z(?!\n)@ $size -= length($1); 'A' x length($1) @e;
+  die "$0: fatal: bad base64 byte (" . sprintf("%02x", ord($1)). ")\n" if $k =~ m@([^A-Za-z0-9+/])@;
+  $k =~ y@A-Za-z0-9+/@`!"#$%&'()*+,-./0123456789:;<=>?\@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_@;
+  $k =~ s@(.{1,60})@ chr(32 + ((length($1) + 3) >> 2) * 3) . $1 . "\n" @gse;
+  $k = unpack("u", $k);
+  substr($k, $size) = "";
+  $k
+}
+
+sub base64_encode($) {
+  my $k = $_[0];
+  my $size3 = 3 - length($k) % 3;
+  $k = pack("u", $k);
+  $k =~ s@.(.*)\n@$1@g;
+  $k =~ y@`!"#$%&'()*+,-./0123456789:;<=>?\@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_@A-Za-z0-9+/@;
+  die "$0: fatal bad uuencode mod3\n" if $size3 != 3 and substr($k, -$size3) ne "A" x $size3;
+  substr($k, -$size3) = "=" x $size3 if $size3 != 3;
+  $k =~ s@(.{1,64})@$1\n@sg;
+  $k
+}
+
+my $min_strong_iter_count = 4200000;
+my $openssl_encrypt_cmd = "openssl pkcs8 -topk8 -v2 aes-256-cbc -v2prf hmacWithSHA1 -iter 4200000 -in";
+my $openssl_decrypt_cmd_pattern = "openssl <SUBCMD> -in ";
+
+sub convert_openssh_key_to_pem($$) {
+  my($k, $mode) = @_;  # Base64-encoded OpenSSH private key.
+
+  my $again = 1;
+  while (1) {
+    # Parse OpenSSH private key.
+    # https://github.com/openssh/openssh-portable/blob/20819b962dc1467cd6fad5486a7020c850efdbee/PROTOCOL.key#L10-L19
+    my $orig_k = $k;
+    $k = base64_decode($k);
+    pos($k) = 0;
+    die "$0: fatal: missing openssh-key-v1 signature\n" if $k !~ m@\Aopenssh-key-v1\0@g;
+    die "$0: fatal: EOF in size of cipher\n" if $k !~ m@\G(....)@gs;
+    my $cipher_size = unpack("N", $1);
+    die "$0: fatal: cipher too long\n" if $cipher_size < 0 or pos($k) + $cipher_size > length($k);
+    my $cipher = substr($k, pos($k), $cipher_size);
+    pos($k) += $cipher_size;
+    die "$0: fatal: EOF in size of kdf\n" if $k !~ m@\G(....)@gs;
+    my $kdf_size = unpack("N", $1);
+    die "$0: fatal: kdf too long\n" if $kdf_size < 0 or pos($k) + $kdf_size > length($k);
+    my $kdf = substr($k, pos($k), $kdf_size);
+    pos($k) += $kdf_size;
+    die "$0: fatal: EOF in size of kdf options\n" if $k !~ m@\G(....)@gs;
+    my $kdfoptions_size = unpack("N", $1);
+    die "$0: fatal: kdf options too long\n" if $kdfoptions_size < 0 or pos($k) + $kdfoptions_size > length($k);
+    my $kdfoptions = substr($k, pos($k), $kdfoptions_size);
+    pos($k) += $kdfoptions_size;
+    die "$0: fatal: expected single key\n" if $k !~ m@\G\0\0\0\x01@gs;
+    die "$0: fatal: EOF in size of public key\n" if $k !~ m@\G(....)@gs;
+    my $pbk_size = unpack("N", $1);
+    my $pbk_end = pos($k) + $pbk_size;
+    die "$0: fatal: EOF in public key\n" if $pbk_size < 0 or  $pbk_end > length($k);
+    die "$0: fatal: EOF in size of key type\n" if pos($k) + 4 > $pbk_end or $k !~ m@\G(....)@gs;
+    my $keytype_size = unpack("N", $1);
+    die "$0: fatal: key type too long\n" if $keytype_size < 0 or pos($k) + $keytype_size > $pbk_end;
+    my $keytype = substr($k, pos($k), $keytype_size);
+    pos($k) += $keytype_size;
+
+    # Parse key data.
+    my(@pbk_na, @prk_na);
+    if ($keytype eq 'ssh-dss') {
+      @pbk_na = qw(a b c d);
+      @prk_na = qw(a b c d e);
+    } elsif ($keytype eq 'ssh-rsa') {
+      @pbk_na = qw(e n);
+      @prk_na = qw(n e d u q p);
+    } else {
+      die "$0: fatal: unsupported SSH key type (only ssh-rsa and ssh-dss is supported): $keytype\n"
+    }
+    if ($cipher ne 'none') {
+      die "$0: fatal: unable to remove passphrase-protection\n" if !$again;
+      my $times_msg = $mode eq 'unprotect' ? "" : " 3 times in total";
+      print STDERR "$0: info: passphrase-protected $keytype key found, runing ssh-keygen to decrypt; you will have to type the passphrase correctly$times_msg; after that be patient for >30 seconds\n";
+      my $dfn;
+      eval {
+        my $fn = "sshkeyconv.$$.tmp";
+        my $f;
+        die "$0: fatal: error opening file for writing: $fn: $!\n" if !open($f, '>',  $fn);
+        $dfn = $fn;
+        die "$0: fatal: error chmodding file: $fn: $!\n" if !chmod(0600, $fn);
+        my $s = "-----BEGIN OPENSSH PRIVATE KEY-----\n$orig_k\n-----END OPENSSH PRIVATE KEY-----\n";
+        die "$0: fatal: error writing to file: $fn: $!\n" if (syswrite($f, $s, length($s)) or 0) != length($s);
+        die "$0: fatal: error closing file: $fn: $!\n" if !close($f);
+        my $fnq = $fn;
+        if ($^O =~ m@win32@i) {
+          $fnq =~ s@'@'\\''@g;
+          $fnq = "'$fnq'";
+        } else {
+          $fnq =~ s@"@""@g;  # TODO(pts): Check this.
+          $fnq = "\"$fnq\"";
+        }
+        die "$0: fatal: ssh-keygen failed (wrong passphrase?)\n" if system("ssh-keygen -p -N \"\" -f $fnq");
+        die "$0: fatal: error opening file for reading: $fn: $!\n" if !open($f, '<',  $fn);
+        $s = join("", <$f>);
+        die "$0: fatal: error closing file: $fn: $!\n" if !close($f);
+        $k = $s;
+      };
+      unlink($dfn) if defined($dfn);  # TODO(pts): Delete even on SIGINT.
+      die $@ if $@;
+      $again = 0;
+      if ($k =~ m@\A(-----BEGIN (RSA|DSA) PRIVATE KEY-----\n(.*)\n-----END \2 PRIVATE KEY-----\n)@s) {
+        $k = $1; last
+      }
+      die "$0: fatal: expected OpenSSH private key in file: $dfn\n" if
+          $k !~ m@\A-----BEGIN OPENSSH PRIVATE KEY-----\n(.*)\n-----END OPENSSH PRIVATE KEY-----\n@s;
+      $k = $1;
+      next;
+    }
+    my %g;
+    for my $na (@pbk_na) {
+      die "$0: fatal: EOF in size of public $na\n" if pos($k) + 4 > $pbk_end or $k !~ m@\G(....)@gs;
+      my $na_size = unpack("N", $1);
+      die "$0: fatal: public $na too long\n" if $na_size < 0 or pos($k) + $na_size > $pbk_end;
+      $g{$na} = substr($k, pos($k), $na_size);
+      pos($k) += $na_size;
+    }
+    die "$0: fatal: $keytype public key too long\n" if pos($k) != $pbk_end;
+    die "$0: fatal: EOF in size of private key\n" if $k !~ m@\G(....)@gs;
+    my $prk_size = unpack("N", $1);
+    my $prk_end = pos($k) + $prk_size;
+    die "$0: fatal: EOF in private key\n" if $prk_size < 0 or $prk_end > length($k);
+    die "$0: fatal: EOF in checkint\n" if pos($k) + 8 > $prk_end or $k !~ m@\G(....)(....)@gs;
+    die "$0: fatal: checkint mismatch\n" if $1 ne $2;
+    die "$0: fatal: EOF in size of private key type\n" if pos($k) + 4 > $prk_end or $k !~ m@\G(....)@gs;
+    my $keytype2_size = unpack("N", $1);
+    die "$0: fatal: private key type too long\n" if $keytype_size < 0 or pos($k) + $keytype2_size > $prk_end;
+    my $keytype2 = substr($k, pos($k), $keytype2_size);
+    pos($k) += $keytype2_size;
+    die "$0: fatal: key type mismatch\n" if $keytype ne $keytype2;
+    my %h;
+    for my $na (@prk_na) {  # TODO(pts): Read $keytype2 etc. like this.
+      die "$0: fatal: EOF in size of private $na\n" if pos($k) + 4 > $prk_end or $k !~ m@\G(....)@gs;
+      my $na_size = unpack("N", $1);
+      die "$0: fatal: private $na too long\n" if $na_size < 0 or pos($k) + $na_size > $prk_end;
+      $h{$na} = substr($k, pos($k), $na_size);
+      pos($k) += $na_size;
+    }
+    # Ignore SSH key comment at pos($k).
+    for my $na (@pbk_na) {
+      die "$0: fatal: mismatch in $na\n" if $g{$na} ne $h{$na};
+    }
+
+    # Generate traditional OpenSSL PEM (PKCS#1 for RSA) private key.
+    if ($keytype eq 'ssh-dss') {
+      $k = join "", map { der_field(2, $_) } ("\0", $h{a}, $h{b}, $h{c}, $h{d}, $h{e});
+      $keytype = "DSA";
+    } elsif ($keytype eq 'ssh-rsa') {
+      # TODO(pts): Compute this modulo (bmod) without Math::BigInt.
+      my $q1 = $h{'q'};
+      die "$0: fatal: q is even\n" if not vec($q1, length($q1) - 1, 8) & 1;
+      vec($q1, length($q1) - 1, 8) &= ~1;  # Subtract 1.
+      my $p1 = $h{p};
+      die "$0: fatal: q is even\n" if not vec($p1, length($p1) - 1, 8) & 1;
+      vec($p1, length($p1) - 1, 8) &= ~1;  # Subtract 1.
+      my $t = biguint_mod($h{d}, $q1);
+      my $s = biguint_mod($h{d}, $p1);
+      $k = join "", map { der_field(2, $_) } ("\0", $h{n}, $h{e}, $h{d}, $h{'q'}, $h{p}, $t, $s, $h{u});
+      $keytype = "RSA";
+    }
+    $k = base64_encode(der_field(0x30, $k));
+    $k = "-----BEGIN $keytype PRIVATE KEY-----\n$k-----END $keytype PRIVATE KEY-----\n";
+    last
+  }
+  if (($mode eq 'protect' or $mode eq 'protect-weak') or ($mode ne 'unprotect' and !$again)) {  # Encrypt the key again.
+    $k = filter_through_cmd_infile($openssl_encrypt_cmd, $k);
+    die "$0: fatal: expected encrypted private key from: $openssl_encrypt_cmd\n" if
+        $k !~ m@\A(-----BEGIN ENCRYPTED PRIVATE KEY-----\n(.*)\n-----END ENCRYPTED PRIVATE KEY-----\n)@s;
+    $k = $1
+  }
+  $k
+}
+
+sub is_protection_strong($) {
+  my $k = $_[0];
+  return 0 if $k !~ m@\A-----BEGIN ENCRYPTED PRIVATE KEY-----\n(.*)\n-----END ENCRYPTED PRIVATE KEY-----\n@s;
+  $k = base64_decode($1);
+  # We accept a DER containing PBES2 with PBKDF2, default HMAC hash (SHA-1),
+  # iteration count at least $min_strong_iter_count. The reason why we
+  # only accept SHA-1 as HMAC hash is that older version of OpenSSL don't
+  # support anyting else.
+  #
+  # Poor man's ASN.1 DER parser, including OIDs.
+  pos($k) = 0;
+  return 0 if $k !~ m@\G
+      \x30(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....)  # SEQUENCE
+      \x30(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....)  # SEQUENCE
+      \x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x05\x0d  # OID PBES2
+      \x30(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....)  # SEQUENCE
+      \x30([\0-\x7f]|\x81.|\x82..|\x83...|\x84....)  # SEQUENCE
+      @xsg;
+  my $b = vec($1, 0, 8);
+  my $size = $b < 0x80 ? $b : $b == 0x81 ? vec($1, 1, 8) : $b == 0x82 ? vec($1, 1, 8) << 8 | vec($1, 2, 8) : $b == 0x83 ? vec($1, 1, 8) << 16 | vec($1, 1, 16) : unpack("N", substr($1, 1));
+  my $endpos = pos($k) + $size;
+  return 0 if $k !~ m@\G
+      \x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x05\x0c  # OID PBKDF2
+      \x30(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....)  # SEQUENCE
+      \x04([\0-\x7f])  # OCTET STRING
+      @xsg;
+  pos($k) += ord($1);
+  return 0 if $k !~ m@\G
+      \x02  # INTEGER
+      (\x01[\0-\x7f] | \x02[\0-\x7f]. | \x03[\0-\x7f].. | \x04[\0-\x7f]...)
+      @xsg;
+  return 0 if pos($k) != $endpos;  # Make sure that :hmacWithSHA256... is not present.
+  $b = vec($1, 0, 8);
+  my $iter_count = $b == 1 ? vec($1, 1, 8) : $b == 2 ? vec($1, 1, 8) << 8 | vec($1, 2, 8) : $b == 3 ? vec($1, 1, 8) << 16 | vec($1, 1, 16) : unpack("N", substr($1, 1));
+  #die $iter_count;
+  $iter_count >= $min_strong_iter_count
+}
+
+# --- main().
+
+if (!@ARGV or $ARGV[0] eq '--help') {
+  my $msg = "ptssh-keycat: concatenate and convert SSH private keys
+This is free software, GNU GPL >=2.0. There is NO WARRANTY. Use at your risk.
+Usage: $0 [<flag>] [<input-file> ...]
+Flags:
+-o <output-file>: Write output here instead of stdout.
+-x <output-file>: Write output here intead of stdout, make it executable.
+--convert: (Default.) Convert OpenSSH keys to OpenSSL-compatible, keep protection (allowing strong, weak or no protection).
+--unprotect: # Convert all private keys to OpenSSL-compatible, unprotected (without passphrase).
+--protect: Convert all private keys to OpenSSL-compatible, strongly protected (with passphrase).
+--protect-weak: Convert all private keys to OpenSSL-compatible, protected (with passphrase), but also allow weak protection.
+See details on https://github.com/pts/ptssh
+";
+  if (@ARGV) {
+    print $msg;
+    exit;
+  } else {
+    die $msg;
+  }
+}
+
+my $mode = 'convert';
+my $ofn;
+my $is_exec = 0;
+my $i = 0;
+while ($i < @ARGV) {
+  my $arg = $ARGV[$i++];
+  if ($arg eq '-o' or $arg eq '--output') {
+    die "$0: fatal: missing output filename for flag: $arg\n" if $i >= @ARGV;
+    $ofn = $ARGV[$i++]; $is_exec = 0;
+  } elsif ($arg eq '-x' or $arg eq '--output-exec') {
+    die "$0: fatal: missing output filename for flag: $arg\n" if $i >= @ARGV;
+    $ofn = $ARGV[$i++]; $is_exec = 1;
+  } elsif ($arg eq '-' or substr($arg, 0, 1) ne '-') {
+    --$i; last
+  } elsif ($arg eq '--') {
+    last
+  } elsif ($arg eq '--convert') {
+    $mode = 'convert';
+  } elsif ($arg eq '--unprotect') {
+    $mode = 'unprotect';
+  } elsif ($arg eq '--protect') {
+    $mode = 'protect';
+  } elsif ($arg eq '--protect-weak') {
+    $mode = 'protect-weak';
+  } else {
+    die "$0: fatal: unknown command-line flag: $arg\n";
+  }
+}
+# Threat the rest of @ARGV as input filenames for <>.
+splice(@ARGV, 0, $i);
+if (defined($ofn)) {
+  die "$0: fatal: error opening output file: $ofn\n" if !open(STDOUT, '>', $ofn);
+  die "$0: fatal: error chmodding output file: $ofn: $!\n" if !chmod($is_exec ? 0700 : 0600, $ofn);
+}
+
+while (<>) {
+  if (!m@^-----BEGIN @) { print; next }
+  if (m@^-----BEGIN OPENSSH PRIVATE KEY-----\n@) {
+    my($k, $done) = ("", 0);
+    while (<>) {
+      if (m@^-----END OPENSSH PRIVATE KEY-----\n@) { $done = 1; last }
+      chomp; $k .= $_;
+    }
+    die "$0: fatal: missing END OPENSSH PRIVATE KEY\n" if !$done;
+    print convert_openssh_key_to_pem($k, $mode);
+  } elsif (m@^-----BEGIN (DSA |RSA |ENCRYPTED |)PRIVATE KEY-----\n@) {
+    my $keytype = $1;
+    my($k, $done) = ($_, 0);
+    while (<>) {
+      $k .= $_;
+      if (m@^-----END (DSA |RSA |ENCRYPTED |)PRIVATE KEY-----\n@ and $1 eq $keytype) { $done = 1; last }
+    }
+    die "$0: fatal: missing END ${keytype}PRIVATE KEY\n" if !$done;
+    # Example: "Proc-Type: 4,ENCRYPTED\nDEK-Info: AES-256-CBC,CE92A25A01F19252BA08396233426AFA\n".
+    my $is_protected = ($keytype eq 'ENCRYPTED ' or $k =~ m@:@);
+    if ($mode eq 'convert') {
+    } elsif ($is_protected and $mode eq 'protect-weak') {
+    } elsif ($is_protected and $mode eq 'protect' and is_protection_strong($k)) {
+    } elsif ($is_protected) {  # Decrypt, and possibly reencrypt.
+      # The `pkey' subcommand (instead of 'pkcs8') would refuse passphrases shorter than 4 bytes.
+      my $subcmd = $keytype eq 'ENCRYPTED ' ? 'pkcs8 ' : lc($keytype);
+      my $outkeytype = $keytype eq 'ENCRYPTED ' ? '' : $keytype;
+      my $cmd = $openssl_decrypt_cmd_pattern;
+      $cmd =~ s@<SUBCMD>@$subcmd@g;
+      my $times_msg = $mode ne 'protect' ? "" : " 3 times in total";
+      print STDERR "$0: info: passphrase-protected OpenSSL key found, running openssl to decrypt; you will have to type the passphrase correctly$times_msg; after that be patient for >30 seconds\n";
+      $k = filter_through_cmd_infile($cmd, $k);
+      die "$0: fatal: expected unprotected private key from: $cmd\n" if not (
+          $k =~ m@\A(-----BEGIN (RSA |DSA |)PRIVATE KEY-----\n(.*)\n-----END \2PRIVATE KEY-----\n)@s and (length($2) == 0 or $2 eq $outkeytype));
+      if (length($2) == 0) {
+        my $kder = base64_decode($3);
+        # Poor man's ASN.1 DER parser, including OID for rsaEncryption and dsaEncryption.
+        if ($kder =~ m@\A\x30(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....)\x02\x01\x00\x30(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....)\x06(\x09\x2a\x86\x48\x86\xf7\x0d\x01\x01\x01\x05\x00\x04(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....)(.*)|\x07\x2a\x86\x48\xce\x38\x04\x01)@s) {
+          my $keytype2 = substr($1, 0, 1) eq "\x09" ? 'rsa' : 'dsa';
+          if ($keytype2 eq 'rsa') {
+            $k = base64_encode($2);
+            $k = "-----BEGIN RSA PRIVATE KEY-----\n$k-----END RSA PRIVATE KEY-----\n";
+          } elsif ($keytype2 eq 'dsa') {
+            # It's not just a field copy, 2 biguints need to be computed for DSA.
+            $k = filter_through_cmd_infile("openssl dsa -in", $k);
+          }
+        }
+      }
+      $k = filter_through_cmd_infile($openssl_encrypt_cmd, $k) if $mode eq 'protect';
+    } elsif ($mode eq 'protect') {
+      print STDERR "$0: info: unprotected OpenSSL key found, running openssl to encrypt; you will have to type the new passphrase 2 times; after that be patient for >30 seconds\n";
+      $k = filter_through_cmd_infile($openssl_encrypt_cmd, $k);
+    }
+    print $k
+  } else {
+    print
+  }
+}

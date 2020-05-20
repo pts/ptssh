@@ -31,35 +31,48 @@
 #   $ chmod +x ptssh_merged
 #   $ ./ptssh_merged myserver1  # Example call.
 #
+# However, it's better to use ptssh-keycat for concatenation, because it
+# also does the necessary key conversion. Native OpenSSH private key format
+# (-----BEGIN OPENSSH PRIVATE KEY-----) only works if the key is at the
+# beginning of the file (ssh(1) error message: `Load key "...": invalid
+# format'), and ptssh-keycat converts them to an OpenSSL-compatible format,
+# which works anywhere. Do it like this:
+#
+#   $ ./ptssh-keycat -x ptssh_merged ptssh ~/.ptssh
+#   $ ./ptssh_merged myserver1  # Example call.
+#
 # Then `./ptssh_merged ...' won't read ~/.ptssh, but it would use the
 # embedded user identity and server specifications.
 #
-# A limitation of embedding: the user identity must be an RSA or DSA
-# (ssh-dss) private key in the traditional OpenSSL PEM format
-# (-----BEGIN RSA PRIVATE KEY----; or -----BEGIN DSA PRIVATE KEY-----)
-# or in the PKCS#8 PEM format
-# (-----BEGIN PRIVATE KEY----- or -----BEGIN ENCRYPTED PRIVATE KEY-----).
-# The native OpenSSH format (-----BEGIN OPENSSH PRIVATE KEY-----) won't work
-# (ssh(1) error message: `Load key "...": invalid format') for embedding.
-# Other key algorithms (e.g. ssh-ed25519) won't work either.
+# A limitation of embedding: the user identity must be an RSA (ssh-rsa,
+# recommended with 4096 bits) or DSA (ssh-dss) private key in an
+# OpenSSL-compatible format. Other key algorithms (e.g. ssh-ed25519) won't
+# work for embedding, because OpenSSH can't read them in an
+# OpenSSL-compatible format.
 #
 # Run these commands to generate a new passphrase-protected RSA private key,
 # and embed it to ptssh:
 #
-#    $ openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:4096 |
+#    $ openssl genrsa 4096 |
 #      openssl pkcs8 -out embed_id_rsa -topk8 -v2 aes-256-cbc -v2prf hmacWithSHA1 -iter 4200000
 #    $ (cat ptssh embed_id_rsa; grep '^ptssh-hostkey-' ~/.ptssh) >ptssh_merged
+#    $ rm -f emed_id_rsa
 #    $ chmod +x ./ptssh_merged
 #
-# TODO(pts): Automate the conversion below with secure defaults.
+# Or, eqivalently and simpler, with ptssh-keycat:
 #
-# Run these commands to convert existing RSA or DSA private key (in any of these
-# formats:
-# ----BEGIN RSA PRIVATE KEY-----;
-# ----BEGIN DSA PRIVATE KEY-----;
-# ----BEGIN OPENSSH PRIVATE KEY-----) in ~/.ptssh to a passphrase-proteced
-# private key of the right format (-----BEGIN ENCRYPTED PRIVATE KEY-----)
-# and embed it to ptssh:
+#    $ (openssl genrsa 4096; grep '^ptssh-hostkey-' ~/.ptssh) |
+#      ./ptssh-keycat --protect -x ptssh_merged
+#
+# ptssh-keycat is the most convenient way to convert OpenSSH private keys to an OpenSSL-compatible format:
+#
+#   $ ./ptssh-keycat -x ptssh_merged ptssh ~/.ptssh
+#
+# ptssh-keycat is a Perl script which implements most of the conversion
+# steps natively in Perl, and it uses ssh-keygen(1) and openssl(1) for
+# passphrase-protection.
+#
+# You can also do the conversion without ptssh-keycat, like this:
 #
 #    $ puttygen -P -O private-openssh -o embed.tmp ~/.ptssh
 #    Enter passphrase to load key:
@@ -73,16 +86,18 @@
 #    $ chmod +x ./ptssh_merged
 #
 # Please note that neither openssl(1) nor ssh-keygen(1) are able to do the
-# conversion above, but puttygen(1) is. On Debian, install puttygen(1) with
-# `sudo apt-get install putty-tools'.
+# conversion above, puttygen(1) is also needed. On Debian, install
+# puttygen(1) with `sudo apt-get install putty-tools'. Probably it's more
+# convenient to use ptssh-keycat, because it doesn't need additional
+# installation.
 #
 # Please note that it's possible to have password-protected RSA and DSA
-# private keys in the traditional formats
-# ( ----BEGIN RSA PRIVATE KEY-----; and ----BEGIN DSA PRIVATE KEY-----),
-# but those are insecure, because they generate the decryption key by doing
-# a single MD5 digest call, and thus the attacker can try (brute-force)
-# millions of passphrases per second. The alternative above (`openssl pkcs8
-# ... -iter 4200000) uses PBKDF2 with a sufficiently large iteration count
+# private keys in the traditional formats ( ----BEGIN RSA PRIVATE KEY-----;
+# and ----BEGIN DSA PRIVATE KEY-----), but those are insecure (weak),
+# because they generate the decryption key by doing a single MD5 digest
+# call, and thus the attacker can try (brute-force) millions of passphrases
+# per second. The alternative above (`openssl pkcs8
+# ... -iter 4200000') uses PBKDF2 with a sufficiently large iteration count
 # (equivalent to `ssh-keygen -a 400') to protect against brute-force
 # attacks. The output private key is compatible with OpenSSH >=3.8 (or even
 # earlier).
@@ -117,10 +132,6 @@
 # ptssh can't run from a FAT filesystem (or other non-Unix filesystems),
 # because `chmod' below isn't able to remove rwx permissions for group and
 # other there. This can be a problem if it's run from USB pen drives.
-#
-# TODO(pts): Add embed tool for merging the config file ~/.ptssh to ptssh.
-# `-----BEGIN OPENSSH PRIVATE KEY-----' works only in the beginning. Also
-# add the confidentiality disclaimer and chmod the output.
 #
 if test $# = 0 || test "$1" = --help; then
   test $# = 0 && exec >&2
@@ -560,8 +571,6 @@ if test -z "$SSHARG_IDF"; then
   SSHARG_IDF="$SSHARG_CF"
 fi
 if test -z "$SSHARG_HASHOST"; then
-  # TODO(pts): Read host config from "$HOME/.ptssh", while reading the user
-  # identity from `-i ...'.
   echo "$0: fatal: ssh server hosts missing from config file: $SSHARG_CF" >&2
   exit 1
 fi
