@@ -207,7 +207,7 @@ sub convert_openssh_key_to_pem($$) {
       @pbk_na = qw(e n);
       @prk_na = qw(n e d u q p);
     } else {
-      die "$0: fatal: unsupported SSH key type (only ssh-rsa and ssh-dss is supported): $keytype\n"
+      die "$0: fatal: unsupported SSH key type (only ssh-rsa and ssh-dss are supported): $keytype\n"
     }
     if ($cipher ne 'none') {
       die "$0: fatal: unable to remove passphrase-protection\n" if !$again;
