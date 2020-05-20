@@ -201,9 +201,13 @@ sub convert_openssh_key_to_pem($$) {
     # Parse key data.
     my(@pbk_na, @prk_na);
     if ($keytype eq 'ssh-dss') {
-      @pbk_na = qw(a b c d);
-      @prk_na = qw(a b c d e);
+      # https://en.wikipedia.org/wiki/Digital_Signature_Algorithm
+      @pbk_na = qw(p q g y);
+      @prk_na = qw(p q g y x);
     } elsif ($keytype eq 'ssh-rsa') {
+      # https://en.wikipedia.org/wiki/RSA_(cryptosystem)
+      # u is called qinv (q_inv), t is called dq (d_q), s is called dp (d_p)
+      # on the Wikipedia page.
       @pbk_na = qw(e n);
       @prk_na = qw(n e d u q p);
     } else {
@@ -284,7 +288,7 @@ sub convert_openssh_key_to_pem($$) {
 
     # Generate traditional OpenSSL PEM (PKCS#1 for RSA) private key.
     if ($keytype eq 'ssh-dss') {
-      $k = join "", map { der_field(2, $_) } ("\0", $h{a}, $h{b}, $h{c}, $h{d}, $h{e});
+      $k = join "", map { der_field(2, $_) } ("\0", @h{@prk_na});
       $keytype = "DSA";
     } elsif ($keytype eq 'ssh-rsa') {
       # TODO(pts): Compute this modulo (bmod) without Math::BigInt.
