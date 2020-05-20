@@ -441,7 +441,7 @@ while (<>) {
       print STDERR "$0: info: passphrase-protected OpenSSL key found, running openssl to decrypt; you will have to type the passphrase correctly$times_msg; after that be patient for >30 seconds\n";
       $k = filter_through_cmd_infile($cmd, $k);
       die "$0: fatal: expected unprotected private key from: $cmd\n" if not (
-          $k =~ m@\A(-----BEGIN (RSA |DSA |)PRIVATE KEY-----\n(.*)\n-----END \2PRIVATE KEY-----\n)@s and (length($2) == 0 or $2 eq $outkeytype));
+          $k =~ m@\A(-----BEGIN (RSA |DSA |)PRIVATE KEY-----\n(.*)\n-----END \2PRIVATE KEY-----\n)@s and (length($2) == 0 or length($outkeytype) == 0 or $2 eq $outkeytype));
       if (length($2) == 0) {
         my $kder = base64_decode($3);
         # Poor man's ASN.1 DER parser, including OID for rsaEncryption and dsaEncryption.
