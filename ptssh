@@ -50,8 +50,13 @@
 # work for embedding, because OpenSSH can't read them in an
 # OpenSSL-compatible format.
 #
-# Run these commands to generate a new passphrase-protected RSA private key,
-# and embed it to ptssh:
+# Run this to generate a new passphrase-protected RSA private key (user
+# identity), and create and embedded ptssh using the new key:
+#
+#    $ (openssl genrsa 4096; grep '^ptssh-hostkey-' ~/.ptssh) |
+#      ./ptssh-keycat --protect -x ptssh_merged
+#
+# The equivalent commands without ptssh-keycat:
 #
 #    $ openssl genrsa 4096 |
 #      openssl pkcs8 -out embed_id_rsa -topk8 -v2 aes-256-cbc -v2prf hmacWithSHA1 -iter 4200000
@@ -59,12 +64,13 @@
 #    $ rm -f emed_id_rsa
 #    $ chmod +x ./ptssh_merged
 #
-# Or, eqivalently and simpler, with ptssh-keycat:
+# Run this to enable the newly created private key on the server:
 #
-#    $ (openssl genrsa 4096; grep '^ptssh-hostkey-' ~/.ptssh) |
-#      ./ptssh-keycat --protect -x ptssh_merged
+#    $ (PK="$(ssh-keygen -y -f ptssh_merged)"; echo "$PK" |
+#       ssh myserver1 'test -d .ssh || mkdir .ssh; cat >>.ssh/authorized_keys')
 #
-# ptssh-keycat is the most convenient way to convert OpenSSH private keys to an OpenSSL-compatible format:
+# ptssh-keycat is the most convenient way to convert OpenSSH private keys to
+# an OpenSSL-compatible format:
 #
 #   $ ./ptssh-keycat -x ptssh_merged ptssh ~/.ptssh
 #
@@ -86,10 +92,9 @@
 #    $ chmod +x ./ptssh_merged
 #
 # Please note that neither openssl(1) nor ssh-keygen(1) are able to do the
-# conversion above, puttygen(1) is also needed. On Debian, install
-# puttygen(1) with `sudo apt-get install putty-tools'. Probably it's more
-# convenient to use ptssh-keycat, because it doesn't need additional
-# installation.
+# conversion above, puttygen(1) or ptssh-keycat is also needed. On Debian,
+# install puttygen(1) with `sudo apt-get install putty-tools'. Probably it's
+# more convenient to use ptssh-keycat, because it works without installation.
 #
 # Please note that it's possible to have password-protected RSA and DSA
 # private keys in the traditional formats ( ----BEGIN RSA PRIVATE KEY-----;
