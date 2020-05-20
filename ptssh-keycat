@@ -404,6 +404,27 @@ sub convert_pkcs8_dsa_der_to_traditional_pem($;$) {
   "-----BEGIN DSA PRIVATE KEY-----\n$k-----END DSA PRIVATE KEY-----\n"
 }
 
+sub maybe_convert_pkcs8_der_to_traditional_pem($$) {
+  my($k, $kder) = @_;
+  # Poor man's ASN.1 DER parser, including OID for rsaEncryption and dsaEncryption.
+  if ($kder =~ m@\A\x30(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....)\x02\x01\x00\x30(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....)\x06(\x09\x2a\x86\x48\x86\xf7\x0d\x01\x01\x01\x05\x00\x04(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....(.*))|\x07\x2a\x86\x48\xce\x38\x04\x01\x30(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....))@s) {
+    my $keytype2 = substr($1, 0, 1) eq "\x09" ? 'rsa' : 'dsa';
+    if ($keytype2 eq 'rsa') {
+      $k = base64_encode($2);
+      $k = "-----BEGIN RSA PRIVATE KEY-----\n$k-----END RSA PRIVATE KEY-----\n";
+    } elsif ($keytype2 eq 'dsa') {
+      $k = convert_pkcs8_dsa_der_to_traditional_pem($k, $kder);
+    }
+  } else {
+    # We could convert an ED25519 key to OpenSSH format (by doing some
+    # arithmetics or running `openssl pkey -pubout'), but that would defeat
+    # the purpose of this conversion tool of converting all OpenSSH format
+    # keys to OpenSSL-compatible formats.
+    die "$0: fatal: PCKS#8 key type not supported by OpenSSH (only ssh-rsa and ssh-dss are supported)\n";
+  }
+  $k
+}
+
 # --- main().
 
 if (!@ARGV or $ARGV[0] eq '--help') {
@@ -482,10 +503,9 @@ while (<>) {
     die "$0: fatal: missing END ${keytype}PRIVATE KEY\n" if !$done;
     # Example: "Proc-Type: 4,ENCRYPTED\nDEK-Info: AES-256-CBC,CE92A25A01F19252BA08396233426AFA\n".
     my $is_protected = ($keytype eq 'ENCRYPTED ' or $k =~ m@:@);
-    if ($mode eq 'convert') {
-    } elsif ($is_protected and $mode eq 'protect-weak') {
+    if ($is_protected and $mode eq 'protect-weak') {
     } elsif ($is_protected and $mode eq 'protect' and is_protection_strong($k)) {
-    } elsif ($is_protected) {  # Decrypt, and possibly reencrypt.
+    } elsif ($is_protected and $mode ne 'convert') {  # Decrypt, and possibly reencrypt.
       # The `pkey' subcommand (instead of 'pkcs8') would refuse passphrases shorter than 4 bytes.
       my $subcmd = $keytype eq 'ENCRYPTED ' ? 'pkcs8 ' : lc($keytype);
       my $outkeytype = $keytype eq 'ENCRYPTED ' ? '' : $keytype;
@@ -496,23 +516,20 @@ while (<>) {
       $k = filter_through_cmd_infile($cmd, $k);
       die "$0: fatal: expected unprotected private key from: $cmd\n" if not (
           $k =~ m@\A(-----BEGIN (RSA |DSA |)PRIVATE KEY-----\n(.*)\n-----END \2PRIVATE KEY-----\n)@s and (length($2) == 0 or length($outkeytype) == 0 or $2 eq $outkeytype));
-      if (length($2) == 0) {  # !! Do this conversion even for '-----BEGIN PRIVATE KEY-----'.
-        my $kder = base64_decode($3);
-        # Poor man's ASN.1 DER parser, including OID for rsaEncryption and dsaEncryption.
-        if ($kder =~ m@\A\x30(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....)\x02\x01\x00\x30(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....)\x06(\x09\x2a\x86\x48\x86\xf7\x0d\x01\x01\x01\x05\x00\x04(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....(.*))|\x07\x2a\x86\x48\xce\x38\x04\x01\x30(?:[\0-\x7f]|\x81.|\x82..|\x83...|\x84....))@s) {
-          my $keytype2 = substr($1, 0, 1) eq "\x09" ? 'rsa' : 'dsa';
-          if ($keytype2 eq 'rsa') {
-            $k = base64_encode($2);
-            $k = "-----BEGIN RSA PRIVATE KEY-----\n$k-----END RSA PRIVATE KEY-----\n";
-          } elsif ($keytype2 eq 'dsa') {
-            $k = convert_pkcs8_dsa_der_to_traditional_pem($k, $kder);
-          }
-        }
+      if ($mode eq 'protect') {
+        $k = filter_through_cmd_infile($openssl_encrypt_cmd, $k);
+      } elsif (length($2) == 0) {
+        $k = maybe_convert_pkcs8_der_to_traditional_pem($k, base64_decode($3));
       }
-      $k = filter_through_cmd_infile($openssl_encrypt_cmd, $k) if $mode eq 'protect';
-    } elsif ($mode eq 'protect') {
+    } elsif ($mode eq 'protect' or $mode eq 'protect-weak') {
       print STDERR "$0: info: unprotected OpenSSL key found, running openssl to encrypt; you will have to type the new passphrase 2 times; after that be patient for >30 seconds\n";
       $k = filter_through_cmd_infile($openssl_encrypt_cmd, $k);
+    } elsif ($mode eq 'unprotect' or $mode eq 'convert') {
+      if (!$is_protected and $k =~ m@\A-----BEGIN PRIVATE KEY-----\n(.*)\n-----END PRIVATE KEY-----\n@s) {
+        $k = maybe_convert_pkcs8_der_to_traditional_pem($k, base64_decode($1));
+      }
+    } else {
+      die "$0: assert: unknown processing mode: $mode\n";
     }
     print $k
   } else {
