@@ -17,7 +17,7 @@ This config file contains the user identity (private key), and for each
 server the server hostkey, server connection information (hostname, port,
 username) and server X11 forwarding config. The easiest way to create a
 config file is importing from ssh(1), e.g. `./ptssh import myserver1' and
-`./ptssh import myuser@myserver2'. It possible to import multiple times
+`./ptssh import myuser@myserver2'. It's possible to import multiple times
 if the user identity (private key) is the same; in this case subsequent
 imported server specifications will be appended to the config file
 ~/.ptssh. A sample config file is also provided in the file
