@@ -29,7 +29,22 @@ if test $# = 0 || test "$1" = --help; then
   test $# = 0 && exit 1
   exit
 fi
-unset H A SSHARG_OPTARGS SSHARG_CMD SSHARG_MODE SSHARG_IDF SSHARG_RSYNC SSHARG_UKHF
+unset H A SSHARG_OPTARGS SSHARG_CMD SSHARG_MODE SSHARG_IDF SSHARG_RSYNC SSHARG_UKHF SSHARG_V
+
+# Extract and remove args `-i ...' and `-v' from the beginning. This is convenience
+# so that `ptssh -v -i ... rsync ...' also works.
+while test $# != 0; do
+  if test $# != 1 && test "$1" = -i; then
+    SSHARG_IDF="$2"; shift; shift
+  elif test "${1#-i}" != "$1"; then
+    SSHARG_IDF="${1#-?}"; shift
+  elif test "$1" = -v || test "$1" = -vv || test "$1" = -vvv || test "$1" = -vvvv || test "$1" = -vvvvv; then
+    SSHARG_V="-${SSHARG_V#-}${1#-}"; shift
+  else
+    break
+  fi
+done
+
 A="${1##*/}"
 test "${1%:}" = "$1" || A=  # Force ssh command.
 # Single-letter flags with argument in ssh of OpenSSH 7.3--8.2.
@@ -73,9 +88,10 @@ else
   test "${A#ssh}" != "$A" && SSHARG_CMD="$1" && shift
 fi
 
-# Extract and remove args `-i ...' from the beginning.
+# Extract and remove args `-i ...' and `-v' from the beginning.
 # This is needed by sftp in OpenSSH 3.8.1, which doesn't have the -i flag.
-# Newer versions (such as OpenSSH 6.7) have it. This is also useful so that
+# Newer versions (such as OpenSSH 6.7) have it. This is also needed by rsync,
+# which uses the `-i' flag for something else. This is also useful so that
 # we don't specify IdentityFile twice, to prevent ssh(1) from trying the
 # same file multiple times.
 while test $# != 0; do
@@ -83,6 +99,12 @@ while test $# != 0; do
     SSHARG_IDF="$2"; shift; shift
   elif test "${1#-i}" != "$1"; then
     SSHARG_IDF="${1#-?}"; shift
+  elif test "$1" = -v || test "$1" = -vv || test "$1" = -vvv || test "$1" = -vvvv || test "$1" = -vvvvv; then
+    if test "$SSHARG_MODE" != rsync; then
+      SSHARG_V="-${SSHARG_V#-}${1#-}"; shift
+    else
+      break
+    fi
   else
     break
   fi
@@ -297,7 +319,7 @@ if test "$SSHARG_MODE" = import; then
   # ~/.ssh/config.
   set -- $(H=echo; "$SSHARG_CMD" -o HostKeyAlias="$SSHARG_HKA" -o IdentityFile=/dev/null -o UserKnownHostsFile="$SSHARG_UKHF" $SSHARG_X11 \
       -o Protocol=2 -o HostKeyAlgorithms="$SSHARG_HKG" -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
-      -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no -o KbdInteractiveAuthentication=no \
+      -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no -o KbdInteractiveAuthentication=no $SSHARG_V \
       -o ProxyCommand='sh -c "echo PTSSH_NHPR '\''.%h'\'' '\''.%p'\'' '\''.%r'\'' END_PTSSH_NHPR >&2"' "$@" 2>&1 |
       while read A; do test "${A#PTSSH_NHPR }" != "$A" && $H "$A" && H=:; done) "$@"
   if test "$1" != PTSSH_NHPR; then
@@ -351,7 +373,7 @@ if test "$SSHARG_MODE" = import; then
   set -- $(
     "$SSHARG_CMD" -v -o BatchMode=no -o HostKeyAlias="$SSHARG_HKA" $SSHARG_IDFARG -o UserKnownHostsFile="$SSHARG_UKHF" \
         -o Protocol=2 -o HostKeyAlgorithms="$SSHARG_HKG" -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=no \
-        -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no -o KbdInteractiveAuthentication=no "$@" true 2>&1 | (
+        -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no -o KbdInteractiveAuthentication=no $SSHARG_V "$@" true 2>&1 | (
     unset UIF AUTH
     AUTH=unknown; SSHARG_X11=-x
     while read A; do
@@ -520,9 +542,9 @@ if test "$SSHARG_MODE" = rsync; then
   fi
   exec "$SSHARG_RSYNC" -e "$SSHARG_CMD -F /dev/null -o User=$SSHARG_USER -o HostKeyAlias=$SSHARG_HKA -o HostName=$SSHARG_HOST -o Port=$SSHARG_PORT -o IdentityFile=$SSHARG_IDF -o UserKnownHostsFile=$SSHARG_UKHF $SSHARG_X11 \
       -o Protocol=2 -o HostKeyAlgorithms=$SSHARG_HKG -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
-      -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no -o KbdInteractiveAuthentication=no" "$@"
+      -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no -o KbdInteractiveAuthentication=no $SSHARG_V" "$@"
 fi
 exec "$SSHARG_CMD" -F /dev/null -o User="$SSHARG_USER" -o HostKeyAlias="$SSHARG_HKA" -o HostName="$SSHARG_HOST" -o Port="$SSHARG_PORT" -o IdentityFile="$SSHARG_IDF" -o UserKnownHostsFile="$SSHARG_UKHF" $SSHARG_X11 \
     -o Protocol=2 -o HostKeyAlgorithms="$SSHARG_HKG" -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o StrictHostKeyChecking=yes \
-    -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no -o KbdInteractiveAuthentication=no "$@"
+    -o CheckHostIP=no -o PasswordAuthentication=no -o ChallengeResponseAuthentication=no -o KbdInteractiveAuthentication=no $SSHARG_V "$@"
 exit 1  # Don't add any more code, so that a config file can be appended (SSHARG_CF="$0").
