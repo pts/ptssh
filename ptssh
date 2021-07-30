@@ -381,8 +381,13 @@ if test "$SSHARG_MODE" = import; then
        debug1:\ Authentication\ succeeded\ \(publickey\)*) AUTH=ok ;;
        debug1:\ Server\ accepts\ key:\ pkalg\ *) ;;
        debug1:\ Server\ accepts\ key:\ * | debug1:\ Trying\ private\ key:\ * | debug1:\ Offering\ public\ key:\ * | debug1:\ Offering\ *\ public\ key:\ *)
-        # We do not support whitespace in the key file name, because e.g. OpenSSH 8.2 appends some more words to the debug message.
-        A="${A%$CR}"; for H in ${A#*: *: }; do UIF="$H"; break; done ;;
+        # We do not support whitespace in the key file name, because e.g. OpenSSH 7.6 and 8.2 append some more words to the debug message.
+        # Example $A: debug1: Offering public key: ED25519 SHA256:123AB... /home/user/.ssh/id_ed25519
+        A="${A%$CR}"; # echo "ZZZ1($A)" >&2
+        for H in ${A#*: *: }; do
+          case "$H" in RSA | DSA | ED25519 | ECDSA | [A-Z][A-Z]*:* ) continue ;; esac
+          UIF="$H"; break  # First word is the filename.
+        done ;;
        debug1:\ Requesting\ X11\ forwarding*) SSHARG_X11=-X ;;
        Permission\ denied\ \(* | *:\ Permission\ denied\ \(*) test "$AUTH" = unknown && AUTH=perm ;;
        ssh*:\ Could\ not\ resolve\ hostname\ * | ssh*:\ Name\ or\ service\ not\ known) AUTH=dns ;;
