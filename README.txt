@@ -71,7 +71,7 @@ work for embedding, because OpenSSH can't read them in an
 OpenSSL-compatible format.
 
 Run this to generate a new passphrase-protected RSA private key (user
-identity), and create and embedded ptssh using the new key:
+identity), and create an embedded ptssh using the new key:
 
    $ (openssl genrsa 4096; grep '^ptssh-hostkey-' ~/.ptssh) |
      ./ptssh-keycat --protect -x ptssh_merged
