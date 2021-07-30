@@ -392,7 +392,10 @@ if test "$SSHARG_MODE" = import; then
        Permission\ denied\ \(* | *:\ Permission\ denied\ \(*) test "$AUTH" = unknown && AUTH=perm ;;
        ssh*:\ Could\ not\ resolve\ hostname\ * | ssh*:\ Name\ or\ service\ not\ known) AUTH=dns ;;
        ssh*:\ connect\ to\ host\ *) AUTH=connect ;;
-       no\ such\ identity:\ *) AUTH=nosuchui ;;
+       no\ such\ identity:\ *)
+        # Example $A: no such identity: /home/user/.ssh/id_rsa: No such file or directory
+        AUTH=nosuchui
+        A="${A%$CR}"; A="${A#*: }"; UIF="${A%: *}"; ;;
       esac
     done
     test "$AUTH" = ok && test -z "$UIF" && AUTH=nouif
@@ -419,7 +422,18 @@ if test "$SSHARG_MODE" = import; then
     exit 1
   fi
   if test "$2" != .ok; then
-    echo "$0: fatal: error (${2#.}) connecting to SSH server: $H" >&2
+    if test "$2" = .nosuchui && test "$4" != .unknown && ! test -f "${4#.}"; then
+      UIF="${4#.}"; UIF="${UIF%.pub}"
+      if test -f "$UIF.pub"; then
+        echo "$0: fatal: missing user identity file, only .pub file exists for SSH server $H: $UIF" >&2
+      else
+        echo "$0: fatal: missing user identity file for SSH server $H: $UIF" >&2
+      fi
+    elif test "$2" = .nosuchui; then
+      echo "$0: fatal: bad or missing user identity file for SSH server $H: ${4#.}" >&2
+    else
+      echo "$0: fatal: error (${2#.}) connecting to SSH server: $H" >&2
+    fi
     exit 1
   fi
   SSHARG_X11="${3#.}"
