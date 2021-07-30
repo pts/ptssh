@@ -162,6 +162,8 @@ The format of the config file ~/.ptssh is the following:
 
 * (Most users don't need to care about these details, because they have
   created the config file with `./ptssh import ...'.)
+* (Use `./ptssh-keycat --check ~/.ptssh' to check the config for common
+  errors and incompatibilities with OpenSSH.)
 * A line of the form `-----BEGIN ... PRIVATE KEY-----' (including
   `-----BEGIN PRIVATE KEY-----') indicating the
   beginning of the user identity (private key). Any format (`...')

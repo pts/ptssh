@@ -438,6 +438,7 @@ Flags:
 --unprotect: # Convert all private keys to OpenSSL-compatible, unprotected (without passphrase).
 --protect: Convert all private keys to OpenSSL-compatible, strongly protected (with passphrase).
 --protect-weak: Convert all private keys to OpenSSL-compatible, protected (with passphrase), but also allow weak protection.
+--check: Check whether input is a correct .ptssh config file.
 See details on https://github.com/pts/ptssh
 ";
   if (@ARGV) {
@@ -472,17 +473,110 @@ while ($i < @ARGV) {
     $mode = 'protect';
   } elsif ($arg eq '--protect-weak') {
     $mode = 'protect-weak';
+  } elsif ($arg eq '--check') {
+    $mode = 'check';
   } else {
     die "$0: fatal: unknown command-line flag: $arg\n";
   }
 }
-# Threat the rest of @ARGV as input filenames for <>.
+# Treat the rest of @ARGV as input filenames for <>.
 splice(@ARGV, 0, $i);
+
+if ($mode eq 'check') {
+  die "$0: fatal: --check does not support output files\n" if defined($ofn);
+  my $error_count = 0;
+  for my $fn (@ARGV) {
+    my @stat = stat($fn);
+    if (@stat and $stat[2] & 0077) {  # Group and other have any permission bits set.
+      print STDERR "$0: error: file permissions are too open for OpenSSH client to use it, use chmod 600: $fn\n"; ++$error_count;
+    }
+  }
+  my $begin_count = 0;
+  my $line_xcount = 0;
+  my $hostkey_count = 0;
+  while (<>) {
+    if (!m@\n@) {
+      print STDERR "$0: error: truncated last line of file\n"; ++$error_count;
+      last;
+    }
+    ++$line_xcount;
+    if (!m@^-----BEGIN @) {
+      if (m@^ptssh-hostkey-(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)$@) {
+        ++$hostkey_count;
+        my($hka, $hkg, $hostkey, $duser, $port, $host, $x11, $h) = ($1, $2, $3, $4, $5, $6, $7, $8);
+        if ($hkg !~ m@^(?:sk-)?(?:ssh-|ecdsa-)@) {
+          print STDERR "$0: error: bad SSH public key algorithm for hostkey: $hkg\n"; ++$error_count;
+        }
+        if ($hostkey !~ m@^AAAA[A-Za-z0-9+/]+$@) {
+          print STDERR "$0: error: bad SSH public key for hostkey: $hostkey\n"; ++$error_count;
+        }
+        if ($port !~ m@^[1-9]\d{0,4}$@ or $port >> 16) {
+          print STDERR "$0: error: bad SSH server port: $port\n"; ++$error_count;
+        }
+        if ($x11 !~ m@^-[xXY]$@) {
+          print STDERR "$0: error: bad SSH client X11 flag: $x11\n"; ++$error_count;
+        }
+      } elsif (m@^ptssh-hostkey-@) {
+        ++$hostkey_count;
+        chomp;
+        print STDERR "$0: error: bad ptssh-hostkey- syntax in line: $_\n"; ++$error_count;
+      }
+      next;
+    }
+    ++$begin_count;
+    if (!m@^-----BEGIN (DSA |RSA |ENCRYPTED |OPENSSH |)PRIVATE KEY-----\n@) {
+      chomp;
+      print STDERR "$0: error: unknown BEGIN line: $_\n"; ++$error_count;
+      next;
+    }
+    my $keytype = $1;
+    my $endtype = 0;
+    while (<>) {
+      if (!m@\n@) {
+        print STDERR "$0: error: truncated last line of file in key data\n"; ++$error_count;
+        last;
+      }
+      if (m@^ptssh-hostkey-@) {
+        print STDERR "$0: error: ptssh-hostkey- line within key data\n"; ++$error_count;
+      } elsif (m@^-----END @) {
+        $endtype = (m@^-----END (DSA |RSA |ENCRYPTED |OPENSSH |)PRIVATE KEY-----\n@ and $1 eq $keytype) ? 2 : 1;
+        last;
+      }
+    }
+    if ($endtype == 1) {
+      chomp;
+      print STDERR "$0: error: unexpected END line, expecting ${keytype}in line: $_\n"; ++$error_count;
+    } elsif ($endtype == 0) {
+      print STDERR "$0: error: file truncated, incomplete ${keytype}private key\n"; ++$error_count;
+      last;
+    } elsif ($keytype eq "OPENSSH " and $line_xcount != 1) {
+      print STDERR "$0: error: ${keytype}private key found in the middle of the file, should be in the beginning for OpenSSH client to use it\n"; ++$error_count;
+    }
+  }
+  if (!$line_xcount) {
+    print STDERR "$0: error: empty file\n"; ++$error_count;
+  }
+  if (!$begin_count) {
+    print STDERR "$0: error: no private keys found\n"; ++$error_count;
+  }
+  if ($begin_count > 1) {
+    print STDERR "$0: error: multiple ($begin_count) private keys found\n"; ++$error_count;
+  }
+  if (!$hostkey_count) {
+    print STDERR "$0: error: no hostkeys (ptssh-hostkey-) found\n"; ++$error_count;
+  }
+  if ($error_count) {
+    print STDERR "$0: info: $error_count error@{['s'x($error_count!=1)]} found\n";
+  } else {
+    print STDERR "$0: info: .ptssh config file OK\n";
+  }
+  exit($error_count ? 9 : 0);
+}
+
 if (defined($ofn)) {
   die "$0: fatal: error opening output file: $ofn\n" if !open(STDOUT, '>', $ofn);
   die "$0: fatal: error chmodding output file: $ofn: $!\n" if !chmod($is_exec ? 0700 : 0600, $ofn);
 }
-
 while (<>) {
   if (!m@^-----BEGIN @) { print; next }
   if (m@^-----BEGIN OPENSSH PRIVATE KEY-----\n@) {
