@@ -325,4 +325,24 @@ The config file format was designed with the following requirements:
   This isn't an important restriction, because OpenSSH ignores lines
   not starting with with `...' specified in `ssh -o HostKeyAlias=...'.
 
+TODOs
+~~~~~
+* Use a one-off ssh-agent with the private key piped using ssh-add. This
+  will lift the following restrictions:
+
+  * The new, OpenSSH-format private keys cannot be embedded (because OpenSSH
+    client only looks at the beginning of the file).
+
+  * The ~/.ptssh config file and the embedded shell script must be chmodded
+    to remove all group and other permission bits. (This will also make the
+    embedded ptssh shell script work on FAT and exFAT filesystems.)
+
+* Add support for multiple ptssh config files (`ptssh -F <config-file>
+  ...').
+
+* Add support for convenient and permanent ssh-agent dedicated to ptssh,
+  one ssh-agent per private key (config file). Agent forwarding can be
+  enabled, but keys in the ssh-agent will be immutable after the first
+  key has been added.
+
 __END__
