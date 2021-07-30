@@ -41,7 +41,8 @@ Design goals of ptssh (all met):
 * It should be easy to embed the config into the ptssh script, thus
   copying one file to the target system should be enough.
 * It shouldn't attempt to run any command (other than ssh, scp, sftp, rsync
-  and chmod) which isn't a shell builtin.
+  and chmod) which isn't a shell builtin. (Actually it also runs chmod(1) to
+  pacify permission checks by OpenSSH on user identity files.)
 
 It's possible to embed the config into the ptssh script by just
 concatenating them:
