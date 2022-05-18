@@ -25,11 +25,16 @@ if test $# = 0 || test "$1" = --help; then
   echo "Usage: $0 scp [<scp-flag> ...] [<user>@]<hostname> [<file> ...]"
   echo "Usage: $0 sftp [<sftp-flag> ...] [<user>@]<hostname>"
   echo "Usage: $0 rsync [-i <identity-file>] [<rsync-flag> ...] <source> [...] <destination>"
+  echo "Usage: $0 git <git-command> [<git-arg> ...]"
   echo "See details on https://github.com/pts/ptssh"
   test $# = 0 && exit 1
   exit
 fi
 unset H A SSHARG_OPTARGS SSHARG_CMD SSHARG_MODE SSHARG_IDF SSHARG_RSYNC SSHARG_UKHF SSHARG_V
+
+# Import environment variables, typically when executed as "$GIT_SSH" by `ptssh git'.
+if test "$PTSSH_IDF"; then SSHARG_IDF="$PTSSH_IDF"; unset PTSSH_IDF; fi
+if test "$PTSSH_V"; then SSHARG_V="$PTSSH_V"; unset PTSSH_V; fi
 
 # Extract and remove args `-i ...' and `-v' from the beginning. This is convenience
 # so that `ptssh -v -i ... rsync ...' also works.
@@ -78,6 +83,8 @@ elif test "${A#rsync}" != "$A"; then
       break
     fi
   done
+elif test "${A#git}" != "$A"; then
+  SSHARG_MODE=git; SSHARG_CMD="$1"; shift
 elif test "${A#import}" != "$A"; then
   SSHARG_MODE=import; SSHARG_CMD=ssh; shift
   A="${1##*/}"
@@ -109,6 +116,12 @@ while test $# != 0; do
     break
   fi
 done
+
+if test "$SSHARG_MODE" = git; then
+  GIT_SSH="$0"; PTSSH_IDF="$SSHARG_IDF"; PTSSH_V="$SSHARG_V"
+  export GIT_SSH; export PTSSH_IDF; export PTSSH_V
+  exec "$SSHARG_CMD" "$@" || exit 2
+fi
 
 # Find the hostname argument (to $H), extract $SSHARG_IDF (-i).
 H=; A=
