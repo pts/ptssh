@@ -480,7 +480,14 @@ if test "$SSHARG_MODE" = import; then
     echo "$0: fatal: not enough data in tmp hostkey file: $SSHARG_UKHF" >&2
     exit 1
   fi
-  if test "$SSHARG_HKA" != ptssh-hostkey-"$H"; then
+  if test "$SSHARG_HKA" = ptssh-hostkey-"$H"; then
+    :
+  elif test "${SSHARG_HKA#|[1-9]|}" != "$SSHARG_HKA"; then
+    # HASH_MAGIC (|1|) used by `-o HashKnownHosts=yes'. Option introduced in
+    # OpenSSH 4.0 (2005-03-09), still works in OpenSSH 9.0 (2022-04-07),
+    # enabled by default in Debian and Ubuntu.
+    SSHARG_HKA=ptssh-hostkey-"$H"
+  else
     echo "$0: fatal: expected hostkey in tmp hostkey file: $SSHARG_UKHF" >&2
     exit 1
   fi
