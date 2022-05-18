@@ -51,7 +51,9 @@ while test $# != 0; do
 done
 
 A="${1##*/}"
-test "${1%:}" = "$1" || A=  # Force ssh command.
+if test "${1%:}" != "$1"; then A=  # Force ssh command.
+elif test "$A" = "$1" && test "${A#*@}" != "$A"; then A=  # Force ssh command. No /, with @. Looks like <user>@<hostname>. Example: git@github.com.
+fi
 # Single-letter flags with argument in ssh of OpenSSH 7.3--8.2.
 SSHARG_OPTARGS=BDEFIJLOQRSWbceilmopw
 if test "${A#scp}" != "$A"; then
@@ -174,7 +176,7 @@ if test "${H#*@}" != "$H"; then
   SSHARG_USER="${H%%@*}"
   H="${H#*@}"
 fi
-H="${H%%:*}"  # Remove filename for rsync and scp.
+H="${H%%:*}"  # Remove filename for rsync and scp. Also remove trailing : for ``Force ssh command''.
 if test -z "$H"; then
   echo "$0: fatal: empty host: $H" >&2
   exit 1
