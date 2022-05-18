@@ -300,7 +300,7 @@ sub convert_openssh_key_to_pem($$) {
       die "$0: fatal: q is even\n" if not vec($q1, length($q1) - 1, 8) & 1;
       vec($q1, length($q1) - 1, 8) &= ~1;  # Subtract 1.
       my $p1 = $h{p};
-      die "$0: fatal: q is even\n" if not vec($p1, length($p1) - 1, 8) & 1;
+      die "$0: fatal: p is even\n" if not vec($p1, length($p1) - 1, 8) & 1;
       vec($p1, length($p1) - 1, 8) &= ~1;  # Subtract 1.
       my $t = biguint_mod($h{d}, $q1);
       my $s = biguint_mod($h{d}, $p1);
@@ -433,7 +433,7 @@ This is free software, GNU GPL >=2.0. There is NO WARRANTY. Use at your risk.
 Usage: $0 [<flag>] [<input-file> ...]
 Flags:
 -o <output-file>: Write output here instead of stdout.
--x <output-file>: Write output here intead of stdout, make it executable.
+-x <output-file>: Write output here instead of stdout, make it executable.
 --convert: (Default.) Convert OpenSSH keys to OpenSSL-compatible, keep protection (allowing strong, weak or no protection).
 --unprotect: # Convert all private keys to OpenSSL-compatible, unprotected (without passphrase).
 --protect: Convert all private keys to OpenSSL-compatible, strongly protected (with passphrase).
